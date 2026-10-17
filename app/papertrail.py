@@ -177,6 +177,97 @@ def load_workflows():
     return out
 
 
+# ---------- designing flows: the catalogue, the checks, saving, drafting with Claude ----------
+
+def catalog():
+    """Everything a flow can be built from: code steps (with what they do), tools that are on, tables."""
+    load_code_steps()
+    import connections
+    code = {n: ((f.__doc__ or '').strip().split('\n')[0]) for n, f in CODE_STEPS.items()}
+    tools = {}
+    for c in connections.all_connections():
+        if c.get('enabled', True):
+            for n, t in c.get('tools', {}).items():
+                tools.setdefault(c['id'], {})[n] = {'permission': t.get('permission'), 'kind': t.get('kind'), 'description': t.get('description', '')}
+    return {'code': code, 'tools': tools, 'tables': [k['id'] for k in list_knowledge()]}
+
+
+def check_flow(wf, cat=None):
+    """The double check: what in this flow would not work or does nothing."""
+    cat = cat or catalog()
+    probs, made, used = [], {'input'}, set()
+    tables = set(cat['tables'])
+    steps = wf.get('steps', [])
+    if not steps or steps[0].get('kind') != 'model':
+        probs.append('The first step should be the intake (a model step reading your message)')
+    for st in steps:
+        name = st.get('title') or st.get('id')
+        for v in [st.get('in')] + list(st.get('reads') or []):
+            if v and v not in made:
+                probs.append('%s needs "%s", which no earlier step makes' % (name, v))
+            if v:
+                used.add(v)
+        for t in st.get('uses') or []:
+            if t not in tables:
+                probs.append('%s reads the table %s, which does not exist' % (name, t))
+        if st.get('kind') == 'code' and st.get('fn') not in cat['code']:
+            probs.append('%s uses the function "%s", which is not built yet' % (name, st.get('fn')))
+        if st.get('kind') == 'tool':
+            tl = cat['tools'].get(st.get('connection'), {}).get(st.get('tool'))
+            if not tl:
+                probs.append('%s uses %s %s, which is not connected or is off' % (name, st.get('connection'), st.get('tool')))
+            elif tl.get('permission') == 'off':
+                probs.append('%s uses %s, which is set to Off in Connections' % (name, st.get('tool')))
+        if st.get('kind') == 'model' and not st.get('prompt'):
+            probs.append('%s has no prompt' % name)
+        if st.get('out'):
+            made.add(st['out'])
+        made.update(st.get('also_out') or [])
+    for st in steps[:-1]:
+        if st.get('out') and st['out'] not in used and st.get('role') != 'act' and not st.get('learns'):
+            probs.append('Nothing uses what %s makes' % (st.get('title') or st.get('id')))
+    return probs
+
+
+def save_flow(wf):
+    """Save a flow you edited. The version before goes to Archive, so nothing is lost."""
+    import shutil as sh
+    path = os.path.join(wf_dir(), wf['id'] + '.json')
+    if os.path.exists(path):
+        arch = os.path.join(os.path.dirname(DATA_DIR), 'Archive')
+        os.makedirs(arch, exist_ok=True)
+        sh.copy(path, os.path.join(arch, '%s (before edit %s).json' % (wf['id'], time.strftime('%d.%m.%y %H%M'))))
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(wf, f, indent=2, ensure_ascii=False)
+    return check_flow(wf)
+
+
+def draft_flow(goal):
+    """Claude designs a flow with the decomposition skill, from what exists. It is saved as a draft."""
+    skill = ''
+    try:
+        with open(os.path.expanduser('~/.claude/skills/flow-decomposition/SKILL.md'), encoding='utf-8') as f:
+            skill = f.read()
+    except OSError:
+        pass
+    example = next((w for w in load_workflows() if w['id'] == 'calendar-create-events'), {})
+    meta = load_meta()
+    prompt = ('Design a PaperTrAIl flow for this job: %s\n\nFollow this method:\n%s\n\nWhat exists (use only these; '
+              'if a check needs a code function that does not exist, still add the step with a clear fn name and it will be flagged '
+              'as not built yet):\n%s\n\nNaming rules for flows: %s\n\nAn existing flow as an example of the JSON:\n%s\n\n'
+              'Reply with the flow JSON only: {"id","name","folder","description","examples","patterns","steps":[...]}. '
+              'Every step needs id, title (the question it answers, no explanation), kind, in/reads/uses/out as needed.'
+              % (goal, skill, json.dumps(catalog(), ensure_ascii=False), meta.get('naming_rules', ''),
+                 json.dumps(example, ensure_ascii=False)[:9000]))
+    raw = ask_claude_json(prompt)
+    if not raw.get('steps'):
+        return None, ['Claude did not return a flow']
+    raw['id'] = re.sub(r'[^a-z0-9]+', '-', (raw.get('id') or raw.get('name') or 'new-flow').lower()).strip('-')
+    raw['draft'] = True
+    raw['goal'] = goal
+    return raw, save_flow(raw)
+
+
 def route_prompt(text, wfs):
     lines = '\n'.join('- %s: %s (e.g. %s)' % (w['id'], w['description'], '; '.join(w.get('examples', [])[:3]))
                       for w in wfs)
@@ -288,6 +379,137 @@ def short(v, limit=3000):
     return txt[:limit] + '...'
 
 
+# ---------- grounding: every value in an intake table must come from the message ----------
+
+STOP = {'the', 'and', 'for', 'with', 'from', 'that', 'this', 'into', 'onto', 'have', 'will', 'are', 'was', 'you', 'your', 'my', 'our',
+        'can', 'please', 'put', 'add', 'book', 'calendar'}
+TIME = re.compile(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b', re.I)
+
+
+def _times(text):
+    out = set()
+    for h, m, ap in TIME.findall(text or ''):
+        h = int(h)
+        if ap.lower() == 'pm' and h < 12:
+            h += 12
+        if h < 24:
+            out.add('%02d:%02d' % (h, int(m or 0)))
+    return out
+
+
+def words_in(value, text):
+    """Is this value really in the text? Times compare as times, words by their stems, most of them must be there."""
+    v = ' '.join(value) if isinstance(value, list) else str(value)
+    vt = _times(v)
+    if vt and re.fullmatch(r'[\d:.\sapmAPM]+', v.strip()):
+        return bool(vt & _times(text))
+    tw = re.findall(r'[a-zà-ž0-9]+', (text or '').lower())
+    stems = {w[:5] for w in tw}
+    vw = [w for w in re.findall(r'[a-zà-ž0-9]+', v.lower()) if len(w) > 2 and w not in STOP]
+    if not vw:
+        return True
+    return sum(1 for w in vw if w[:5] in stems) / len(vw) >= 0.6
+
+
+def ground(rows, text, fields):
+    """One rule for every field of every flow. A value the person said must be in the message. A value the
+    model inferred (an action, how often, a priority...) must come with the words it was inferred from,
+    and those words must be in the message. Anything else is cleared. A field can also name a table whose
+    values it may not be (a calendar name is not a place)."""
+    fixes = []
+    for r in rows if isinstance(rows, list) else []:
+        if not isinstance(r, dict):
+            continue
+        ev = r.get('evidence') if isinstance(r.get('evidence'), dict) else {}
+        for f, spec in fields.items():
+            v = r.get(f)
+            if v in (None, '', False, [], 'false') or str(v).lower() in [str(spec.get('default', '')).lower()] + spec.get('ignore', []):
+                if str(v).lower() in spec.get('ignore', []):
+                    r[f] = spec.get('default', '')
+                continue
+            if spec.get('kind') == 'said':
+                ok = words_in(v, text)
+            else:   # inferred: its own words are in the message, or the words it was inferred from are
+                ok = words_in(v, text) or (bool(ev.get(f)) and words_in(ev.get(f), text))
+            if not ok and spec.get('type'):
+                ok = said_as_type(v, spec['type'], text)   # said another way: "an hour" is 60 minutes, "Mondays" is weekly
+            if ok and spec.get('type'):
+                v2 = as_type(v, spec['type'])
+                ok = v2 is not None
+                if ok:
+                    r[f] = v = v2
+            if ok and spec.get('not_in_table'):
+                tbl, col = spec['not_in_table'].split(':')
+                ok = str(v).strip().lower() not in {x.lower() for x in table_column(tbl, col)}
+            if not ok:
+                fixes.append('%s "%s" is not in what you wrote' % (f, ' '.join(v) if isinstance(v, list) else v))
+                r[f] = spec.get('default', '')
+        r.pop('evidence', None)
+        # the main field holds only the thing itself: words that belong to other fields come out of it
+        for f, spec in fields.items():
+            if spec.get('main') and isinstance(r.get(f), str):
+                v = r[f]
+                for g, other in fields.items():
+                    ov = r.get(g)
+                    if g != f and other.get('kind') == 'said' and isinstance(ov, str) and ov and ov.lower() != v.lower():
+                        v = re.sub(r'\s*\b(on|at|in|for|from|till|until|to|with)?\s*' + re.escape(ov) + r'\b', '', v, flags=re.I)
+                v = re.sub(r'\s*\b(on|at|in|for)\s+(\w+day|\w+days|\d{1,2}([:.]\d{2})?\s*(am|pm)?|an? (hour|half hour)|half an hour|\d+ (minutes|mins|hours?))\b', '', v, flags=re.I)
+                r[f] = re.sub(r'\s+', ' ', v).strip(' ,') or r[f]
+    return rows, fixes
+
+
+WEEKDAY = r'(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)s?'
+DURATION = re.compile(r'(quarter of an hour|half an hour|half hour|an hour and a half|an hour|one hour|a hour|two hours|three hours|\d+(?:[.,]\d+)?\s*(?:h|hr|hrs|hours?|m|min|mins|minutes?))\b', re.I)
+REPEAT = re.compile(r'\b(every|each|weekly|daily|monthly|' + WEEKDAY[1:-3] + r')s\b|\b(every|each|weekly|daily|monthly)\b', re.I)
+
+
+def said_as_type(v, kind, text):
+    """Is this value in the message in another form its type allows?"""
+    if kind == 'minutes':
+        want = as_type(v, 'minutes')
+        return want is not None and any(as_type(m.group(1), 'minutes') == want for m in DURATION.finditer(text or ''))
+    if kind == 'repeat':
+        return bool(REPEAT.search(text or ''))
+    return False
+
+
+def as_type(v, kind):
+    """The value as its type, or None when it is not that kind of thing at all."""
+    s = (' '.join(v) if isinstance(v, list) else str(v)).strip().lower()
+    if kind == 'day':
+        if re.fullmatch(r'(this |next |on )?' + WEEKDAY, s):
+            return re.sub(r's$', '', s) if re.fullmatch(r'(this |next |on )?' + WEEKDAY, s) and s.endswith('days') else s
+        if re.fullmatch(r'today|tomorrow|tonight|day after tomorrow|in \d+ (day|days|week|weeks)|\d{1,2}\.\s*\d{1,2}\.?(\s*\d{2,4})?|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}(st|nd|rd|th)?( of)? [a-z]+|[a-z]+ \d{1,2}(st|nd|rd|th)?', s):
+            return s
+        return None
+    if kind == 'time':
+        t = _times(s)
+        return sorted(t)[0] if t else None
+    if kind == 'minutes':
+        if s.isdigit():
+            return int(s)
+        words = {'an hour': 60, 'one hour': 60, 'a hour': 60, 'half an hour': 30, 'half hour': 30, 'quarter of an hour': 15,
+                 'an hour and a half': 90, 'two hours': 120, 'three hours': 180}
+        if s in words:
+            return words[s]
+        m = re.fullmatch(r'(\d+(?:[.,]\d+)?)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)', s)
+        if m:
+            n = float(m.group(1).replace(',', '.'))
+            return int(n * 60) if m.group(2).startswith('h') else int(n)
+        return None
+    return v
+
+
+def table_column(table, col):
+    import csv
+    p = os.path.join(know_dir(), table + '.csv')
+    try:
+        with open(p, encoding='utf-8-sig', newline='') as fh:
+            return [row.get(col, '').strip() for row in csv.DictReader(fh)]
+    except OSError:
+        return []
+
+
 def usable(val, required=None):
     """An answer is usable when it is there and every row has the fields the flow needs."""
     if val in (None, '', []):
@@ -327,20 +549,48 @@ def run_steps(wf, text, dry=False):
                     rec.update(model='claude', fell_back=True)
                 if not usable(val, st.get('required')):
                     raise ValueError('the model gave no usable ' + st['out'])
+                fixes = []
+                if st.get('fields'):
+                    val, fixes = ground(val, text, st['fields'])
+                if st.get('check'):
+                    ctx.pop('_note', None)
+                    val = CODE_STEPS[st['check']](val, ctx)
+                    ctx.pop('_note', None)
+                rec['fixes'] = fixes + (ctx.get('intake_fixes') or [])
             elif st['kind'] == 'code':
+                ctx.pop('_note', None)
                 val = CODE_STEPS[st['fn']](ctx.get(st.get('in')), ctx)
+                if ctx.get('_note'):
+                    rec['note'] = ctx.pop('_note')
+            elif st.get('when') and not ctx.get(st['when']):
+                # only runs when there is something for it, e.g. moving lunch
+                rec.update(ok=True, skipped=True, out='not needed this time', ms=0)
+                ctx[st['out']] = None
+                yield rec
+                continue
             elif st['kind'] == 'tool':
                 c = connections.load(st['connection'])
                 perm = c.get('tools', {}).get(st['tool'], {}).get('permission', 'off')
                 kind = c.get('tools', {}).get(st['tool'], {}).get('kind', 'write')
-                items = ctx.get(st['in']) if st.get('each') else [ctx.get(st['in']) if st.get('in') else st.get('args', {})]
+                if st.get('per'):
+                    # one call per distinct value in the rows, e.g. read each date the events fall on
+                    vals = sorted({r.get(st['per']) for r in (ctx.get(st['in']) or []) if r.get(st['per'])})
+                    items = [{st['per']: v} for v in vals]
+                elif st.get('each'):
+                    items = ctx.get(st['in']) or []
+                else:
+                    items = [ctx.get(st['in']) if st.get('in') else st.get('args', {})]
+                rec['args'] = items if st.get('per') else None
                 if dry and kind == 'write':
                     val = {'dry_run': True, 'would_send': items}
-                elif perm == 'ask':
-                    raise PermissionError(st['tool'] + ' is set to Ask, approving inside a flow is not built yet')
+                elif perm == 'ask' and st['tool'] not in ctx.get('approved', set()):
+                    raise PermissionError(st['tool'] + ' is set to Ask in Connections')
                 else:
                     res = [connections.call(st['connection'], st['tool'], a or {}) for a in items]
-                    val = res if st.get('each') else res[0]
+                    if st.get('per'):
+                        val = [x for r in res for x in (r if isinstance(r, list) else [r])]
+                    else:
+                        val = res if st.get('each') else res[0]
             else:
                 rec.update(ok=False, ms=0, out='needs a person, not built yet')
                 yield rec
@@ -363,7 +613,7 @@ def log_run(rec):
         f.write(json.dumps(rec, ensure_ascii=False) + '\n')
 
 
-MODIFIER = re.compile(r'^\s*(and\s+|but\s+)?(please\s+)?(book (it |them )?anyway|anyway|even if .*|(high|low|normal|top) priority|priority .*|urgent|because .*|on (my )?[\w -]+ calendar|in (my )?[\w -]+ calendar)\s*[.!]?\s*$', re.I)
+MODIFIER = re.compile(r'^\s*(and\s+|but\s+)?(please\s+)?(book (it |them )?anyway|anyway|even if .*|(high|low|normal|top) priority|priority .*|urgent|because .*|move lunch to .*|keep lunch.*|add another|on (my )?[\w -]+ calendar|in (my )?[\w -]+ calendar)\s*[.!]?\s*$', re.I)
 
 
 def split_request(text):
@@ -399,7 +649,7 @@ def split_request(text):
 def handle_stream(text, brain='auto', dry=False):
     """Split, route and run one request, yielding events the interface animates as they happen."""
     req = time.strftime('%Y%m%d%H%M%S')
-    wfs = load_workflows()
+    wfs = [w for w in load_workflows() if not w.get('draft')]   # a draft never runs until approved
     ids = {w['id']: w for w in wfs}
     if brain == 'claude':
         parts, split = [text], None
@@ -411,7 +661,12 @@ def handle_stream(text, brain='auto', dry=False):
         if split and len(parts) > 1:
             rec['split'] = split
         picked = None
-        if brain != 'claude' and wfs:
+        # code first: a flow whose patterns match, and only that one, is picked without a model
+        hits = [w for w in wfs if any(re.search(pt, part, re.I) for pt in w.get('patterns', []))]
+        if brain != 'claude' and len(hits) == 1:
+            picked = hits[0]
+            rec['router'] = {'model': 'code', 'answer': picked['id'], 'tokens': 0, 'ms': 0, 'pattern': True}
+        elif brain != 'claude' and wfs:
             try:
                 model = brain if brain not in ('auto', 'claude') else SMALL
                 out, tok, ms = ask_small(route_prompt(part, wfs), model)
