@@ -195,7 +195,7 @@ def catalog():
 def check_flow(wf, cat=None):
     """The double check: what in this flow would not work or does nothing."""
     cat = cat or catalog()
-    probs, made, used = [], {'input'}, set()
+    probs, made, used = [], {'input'} | set(SYSTEM_VARS), set()
     tables = set(cat['tables'])
     steps = wf.get('steps', [])
     if not steps or steps[0].get('kind') != 'model':
@@ -220,6 +220,13 @@ def check_flow(wf, cat=None):
                 probs.append('%s uses %s, which is set to Off in Connections' % (name, st.get('tool')))
         if st.get('kind') == 'model' and not st.get('prompt'):
             probs.append('%s has no prompt' % name)
+        for v in re.findall(r'\{(\w+)\}', st.get('prompt') or ''):
+            if v in ('input', 'knowledge'):
+                continue
+            if v not in made and v not in SYSTEM_VARS:
+                probs.append('%s uses {%s} in its prompt, which nothing makes' % (name, v))
+            elif v not in (st.get('reads') or []) and v != st.get('in'):
+                probs.append('%s uses {%s} in its prompt but is not connected to it' % (name, v))
         if st.get('out'):
             made.add(st['out'])
         made.update(st.get('also_out') or [])
@@ -346,6 +353,32 @@ def list_knowledge():
     return out
 
 
+def knowledge_folders():
+    """Every folder in My Data/knowledge, empty ones too, so a new folder shows before it has a table."""
+    out = []
+    for dirpath, dirs, _ in os.walk(know_dir()):
+        for d in sorted(dirs):
+            out.append(os.path.relpath(os.path.join(dirpath, d), know_dir()).replace(os.sep, '/'))
+    return sorted(out)
+
+
+def new_knowledge(folder, name=None):
+    """A new folder, or a new table in a folder, with one header row to start from."""
+    folder = re.sub(r'[^\w\- /]', '', (folder or '').strip()).strip('/ ')
+    if not folder:
+        return False, 'give the folder a name'
+    d = os.path.join(know_dir(), folder)
+    os.makedirs(d, exist_ok=True)
+    if name:
+        n = re.sub(r'[^\w\- ]', '', name.strip()).strip().lower().replace(' ', '-')
+        p = os.path.join(d, n + '.csv')
+        if os.path.exists(p):
+            return False, 'that table already exists'
+        with open(p, 'w', encoding='utf-8-sig', newline='') as f:
+            f.write('name,value\r\n')
+    return True, 'made'
+
+
 def read_knowledge(kid):
     for k in list_knowledge():
         if k['id'] == kid:
@@ -354,10 +387,17 @@ def read_knowledge(kid):
     return ''
 
 
+SYSTEM_VARS = {'today': lambda: __import__('datetime').datetime.now().strftime('%A %Y-%m-%d %H:%M')}
+
+
+def system_vars():
+    """Variables that come from the computer, not from a step: each one is a card in the Data column."""
+    return {k: f() for k, f in SYSTEM_VARS.items()}
+
+
 def fill(prompt, text, ctx, uses):
-    """{input} is the request, {today} the date, {knowledge} the files the step uses, {x} anything in ctx."""
-    from datetime import datetime
-    out = prompt.replace('{input}', text).replace('{today}', datetime.now().strftime('%A %Y-%m-%d %H:%M'))
+    """Every {name} in a prompt is a variable: input, a system variable, an earlier step's result, or {knowledge}."""
+    out = prompt.replace('{input}', text)
     out = out.replace('{knowledge}', '\n\n'.join(read_knowledge(k) for k in uses or []))
     for k, v in ctx.items():
         if '{' + k + '}' in out:
@@ -528,16 +568,27 @@ def ask_claude_json(prompt):
         return {}
 
 
-def run_steps(wf, text, dry=False):
+def run_steps(wf, text, dry=False, extra=None):
     """Run a workflow step by step, yielding each step's record as soon as it finishes.
-    dry: write tools are not called, the step shows what it would have sent."""
+    dry: write tools are not called, the step shows what it would have sent.
+    extra: more variables for the run, e.g. the thesis test row's today."""
     import connections
     load_code_steps()
-    ctx = {'input': text, 'dry': dry}
+    ctx = dict(system_vars(), input=text, dry=dry)
+    ctx.update(extra or {})
+    if ctx.get('test_today'):   # a test row's today is the run's today, also inside prompts
+        from datetime import datetime as _dt
+        ctx['today'] = _dt.strptime(ctx['test_today'], '%Y-%m-%d %H:%M').strftime('%A %Y-%m-%d %H:%M')
     for st in wf['steps']:
         t0 = time.time()
         rec = {'id': st['id'], 'kind': st['kind'], 'tokens': 0}
         try:
+            if st.get('when') and not needed(st, ctx):
+                # only run when there is something to do: a model or code step hands its rows on untouched
+                rec.update(ok=True, skipped=True, out='not needed this time', ms=0)
+                ctx[st['out']] = ctx.get(st.get('in')) if st['kind'] == 'code' else None   # a skipped model table (notes, picks) is empty, never the rows it would have read
+                yield rec
+                continue
             if st['kind'] == 'model':
                 prompt = fill(st['prompt'], text, ctx, st.get('uses'))
                 out, tok, _ = ask_small(prompt)
@@ -548,7 +599,9 @@ def run_steps(wf, text, dry=False):
                     val = ask_claude_json(prompt).get(st['out'])
                     rec.update(model='claude', fell_back=True)
                 if not usable(val, st.get('required')):
-                    raise ValueError('the model gave no usable ' + st['out'])
+                    if not st.get('may_be_empty'):
+                        raise ValueError('the model gave no usable ' + st['out'])
+                    val = []   # an extra like notes: nothing usable is not a failure, the event goes on without it
                 fixes = []
                 if st.get('fields'):
                     val, fixes = ground(val, text, st['fields'])
@@ -557,19 +610,37 @@ def run_steps(wf, text, dry=False):
                     val = CODE_STEPS[st['check']](val, ctx)
                     ctx.pop('_note', None)
                 rec['fixes'] = fixes + (ctx.get('intake_fixes') or [])
+                # any model step may ask: a row's "ask" goes to the one Ask step, the same as a code step's question
+                for r in (val if isinstance(val, list) else []):
+                    q = str(r.get('ask') or '').strip() if isinstance(r, dict) else ''
+                    if q:
+                        if not isinstance(ctx.get('asks'), list):
+                            ctx['asks'] = []
+                        if q not in ctx['asks']:
+                            ctx['asks'].append(q)
+                if st.get('role') == 'intake' and isinstance(val, list):
+                    # every row gets an id, later tables join back by it, never by position
+                    val = [dict(r, row=i + 1) if isinstance(r, dict) else r for i, r in enumerate(val)]
             elif st['kind'] == 'code':
                 ctx.pop('_note', None)
-                val = CODE_STEPS[st['fn']](ctx.get(st.get('in')), ctx)
+                val = CODE_STEPS[st['fn']](join_rows(ctx.get(st.get('in')), [ctx.get(j) for j in st.get('join') or []]), ctx)
                 if ctx.get('_note'):
-                    rec['note'] = ctx.pop('_note')
+                    rec['how'] = ctx.pop('_note')
             elif st.get('when') and not ctx.get(st['when']):
                 # only runs when there is something for it, e.g. moving lunch
                 rec.update(ok=True, skipped=True, out='not needed this time', ms=0)
                 ctx[st['out']] = None
                 yield rec
                 continue
+            elif st.get('unless') and ctx.get(st['unless']):
+                # e.g. create only when nothing is asked
+                rec.update(ok=True, skipped=True, out='not now: ' + st['unless'], ms=0)
+                ctx[st['out']] = None
+                yield rec
+                continue
             elif st['kind'] == 'tool':
-                c = connections.load(st['connection'])
+                # a dry run never touches the connection: write tools only record what they would send
+                c = {} if dry and st.get('role') == 'act' else connections.load(st['connection'])
                 perm = c.get('tools', {}).get(st['tool'], {}).get('permission', 'off')
                 kind = c.get('tools', {}).get(st['tool'], {}).get('kind', 'write')
                 if st.get('per'):
@@ -578,6 +649,9 @@ def run_steps(wf, text, dry=False):
                     items = [{st['per']: v} for v in vals]
                 elif st.get('each'):
                     items = ctx.get(st['in']) or []
+                    if st.get('prepare'):
+                        # part of the action, not a step: e.g. the thesis test's TEST title and write guard
+                        items = CODE_STEPS[st['prepare']](items, ctx)
                 else:
                     items = [ctx.get(st['in']) if st.get('in') else st.get('args', {})]
                 rec['args'] = items if st.get('per') else None
@@ -591,11 +665,18 @@ def run_steps(wf, text, dry=False):
                         val = [x for r in res for x in (r if isinstance(r, list) else [r])]
                     else:
                         val = res if st.get('each') else res[0]
+            elif st['kind'] == 'human' and ctx.get('test_today'):
+                # a thesis test run cannot wait for answers: the questions are the result and nothing is created
+                val = list(ctx.get(st.get('in')) or [])
+                rec['ask'] = [{'type': 'add', 'text': q} for q in val]
             else:
                 rec.update(ok=False, ms=0, out='needs a person, not built yet')
                 yield rec
                 return
             ctx[st['out']] = val
+            missing = check_needs(st, val, ctx)
+            if missing:
+                rec['missing'] = missing
             rec.update(ok=True, out=short(val), ms=int((time.time() - t0) * 1000))
             yield rec
         except Exception as e:
@@ -604,6 +685,51 @@ def run_steps(wf, text, dry=False):
                 rec['ask'] = e.questions
             yield rec
             return
+
+
+def join_rows(rows, tables):
+    """The rows with each extra table's fields added by row id (a model step's table, e.g. picks or notes)."""
+    if not tables or not isinstance(rows, list):
+        return rows
+    out = [dict(r) for r in rows]
+    for t in tables:
+        by = {str(x.get('row')): x for x in (t or []) if isinstance(x, dict)}
+        for r in out:
+            extra = by.get(str(r.get('row'))) or {}
+            r.update({k: v for k, v in extra.items() if k != 'row' and v not in (None, '', [])})
+    return out
+
+
+def needed(st, ctx):
+    """A step's "when": a variable that must be there, or "any:field", run only if some row has that field filled."""
+    w = st['when']
+    if w.startswith('any:'):
+        v = ctx.get(st.get('in'))
+        rows = v if isinstance(v, list) else (v.get('events') if isinstance(v, dict) else [])
+        return any(isinstance(r, dict) and str(r.get(w[4:]) or '').strip() not in ('', '[]') for r in rows or [])
+    return bool(ctx.get(w))
+
+
+def check_needs(st, val, ctx):
+    """Every output field of a step is required or optional ("needs" in the flow). A required field that came out
+    empty becomes a question for the person, unless a step already asked about it. Optional ones may stay empty."""
+    needs = st.get('needs') or {}
+    rows = val if isinstance(val, list) else (val.get('events') if isinstance(val, dict) else None)
+    missing = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        for f, kind in needs.items():
+            want = kind == 'required' or (kind == 'required_unless_all_day' and not r.get('allDay'))
+            if want and r.get(f) in (None, '', []) and f not in (ctx.get('asked_fields') or set()):
+                q = 'What is the %s of %s?' % (f, r.get('title') or r.get('what') or 'this event')
+                missing.append(f)
+                if isinstance(ctx.get('asks'), list):
+                    ctx['asks'].append(q)
+                else:
+                    ctx['asks'] = [q]
+                ctx.setdefault('asked_fields', set()).add(f)
+    return missing
 
 
 def log_run(rec):
@@ -657,7 +783,8 @@ def handle_stream(text, brain='auto', dry=False):
         parts, split = split_request(text)
     yield {'ev': 'parts', 'parts': parts, 'split': split}
     for i, part in enumerate(parts):
-        rec = {'time': time.strftime('%Y-%m-%dT%H:%M:%S'), 'req': req, 'request': text, 'text': part, 'brain': brain, 'dry': dry}
+        rec = {'time': time.strftime('%Y-%m-%dT%H:%M:%S'), 'req': req, 'request': text, 'text': part, 'brain': brain, 'dry': dry,
+               'vars': system_vars()}
         if split and len(parts) > 1:
             rec['split'] = split
         picked = None
