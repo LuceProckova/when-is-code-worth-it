@@ -96,18 +96,9 @@ def make_title(events, ctx):
     out = []
     for e in events or []:
         e = dict(e)
-        # the model's flags only count when the request really says so, checked here in code
-        if not re.search(r'\b(every|weekly|daily|each)\b', said):
-            e['often'] = ''
-        if not re.search(r'\b(maybe|not sure|might|tentative)\b', said):
-            e['maybe'] = False
-        if not re.search(r'not agreed|not confirmed|booked|no invit', said):
-            e['status'] = ''
-        if not re.search(r'priorit|urgent|important|asap', said):
-            e['priority'] = ""
-        # a calendar name is not a place: "in Me Time" says which calendar, not where to travel
-        if norm_place(e.get('location')) in {norm_place(n) for n in cfg()['calendars']}:
-            e['location'] = ''
+        if e.get('action') == 'move':
+            out.append(dict(e, title=(e.get('what') or '').strip()))
+            continue
         what = spell((e.get('what') or e.get('title') or '').strip())
         what = what[:1].upper() + what[1:]
         who = e.get('who') or ''
@@ -157,7 +148,8 @@ def learn_travel(existing, ctx):
     except a time you gave yourself, which the calendar never overwrites."""
     table = load_travel()
     learnt = 0
-    for e in sorted((existing or {}).get('events', []), key=lambda e: e.get('start', '')):
+    evs = existing.get('events', []) if isinstance(existing, dict) else (existing or [])
+    for e in sorted(evs, key=lambda e: e.get('start', '')):
         t = e.get('title') or ''
         m = re.match(r'^\s*(.+?)\s*(?:->|→)\s*(.+?)\s*$', t)
         if not m or e.get('allDay'):
@@ -171,6 +163,7 @@ def learn_travel(existing, ctx):
             table[key] = {'minutes': mins, 'seen': e['start'][:10], 'source': 'calendar'}
             learnt += 1
     save_travel(table)
+    ctx['_note'] = 'Knows %d routes now%s' % (len(table), ', checked %d buffers on that day' % learnt if learnt else '')
     return {'routes': len(table), 'read_from_calendar': learnt}
 
 
@@ -353,7 +346,7 @@ def is_place(loc):
 def add_travel(events, ctx):
     """A buffer there and back for every event with a place, from the travel table.
     Where she comes from is the place of the event before it that day, else Home."""
-    existing = (ctx.get('existing') or {}).get('events', [])
+    existing = day_events(ctx)
     conf = cfg()
     BUFFER_CALENDAR, HOME = conf['travel_calendar'], conf['home']
     buf = next((c for c in ctx.get('calendars') or [] if norm_place(c['name']) == norm_place(BUFFER_CALENDAR)), None)
@@ -367,8 +360,16 @@ def add_travel(events, ctx):
         day = [x for x in existing if (x.get('start') or '')[:10] == e['date'] and is_place(x.get('location'))]
         before = [x for x in day if x['end'][11:16] <= e['start']]
         after = [x for x in day if x['start'][11:16] >= e['end']]
-        frm = before[-1]['location'] if before else HOME
-        back = after[0]['location'] if after else HOME
+        base = day_base(e['date'])
+        frm = before[-1]['location'] if before else base.get('wakes_at') or HOME
+        back = after[0]['location'] if after else base.get('sleeps_at') or HOME
+        # a place block (your workday) around the event says where you physically are
+        def at(t):
+            for x in day_events(ctx, e['date']):
+                if booking_type(x)[0] == 'place' and x['start'][11:16] <= t <= x['end'][11:16]:
+                    return (x.get('location') or '').strip() if is_place(x.get('location')) else x['title'].strip()
+        frm = at(e['start']) or frm
+        back = at(e['end']) or back
         for a, b, when in ((frm, dest, 'there'), (dest, back, 'back')):
             if norm_place(a) == norm_place(b):
                 continue
@@ -395,6 +396,8 @@ def add_travel(events, ctx):
     if asks:
         raise NeedAnswer([{'type': 'travel', 'route': q, 'text': 'How many minutes from %s?' % q.replace(' -> ', ' to ')} for q in asks])
     ctx['travel_notes'] = notes
+    added = len(out) - len(events or [])
+    ctx['_note'] = ('%d travel buffer%s added' % (added, '' if added == 1 else 's')) if added else 'No place to travel to, no buffers'
     return out
 
 
@@ -407,7 +410,7 @@ def fill_length(events, ctx):
     out, asks = [], []
     for e in events or []:
         e = dict(e)
-        if e.get('allDay') or e.get('end'):
+        if e.get('allDay') or e.get('end') or e.get('action') == 'move':
             out.append(e)
             continue
         what = (e.get('what') or e.get('title') or '').strip().lower()
@@ -423,6 +426,7 @@ def fill_length(events, ctx):
         out.append(e)
     if asks:
         raise NeedAnswer(asks)
+    ctx['_note'] = 'From the times you gave' if all(e.get('end') and not e.get('minutes') for e in events or []) else 'Length known'
     return out
 
 
@@ -441,25 +445,48 @@ def booking_type(ev):
         m = r['match'].strip().lower()
         if (r['by'] == 'calendar' and m == cal) or (r['by'] == 'title' and m and m in title):
             return r['type'], r
+    # a block of four hours or more is somewhere you are (a workday), things go inside it
+    try:
+        if not ev.get('allDay') and (datetime.fromisoformat(ev['end']) - datetime.fromisoformat(ev['start'])).total_seconds() >= 4 * 3600:
+            return 'place', None
+    except Exception:
+        pass
     return 'fixed', None
 
 
+def day_events(ctx, date=None):
+    """The events read for the day (the "What is on that day" step), optionally one date only."""
+    evs = ctx.get('day') or []
+    evs = evs.get('events', []) if isinstance(evs, dict) else evs
+    return [x for x in evs if not date or (x.get('start') or '')[:10] <= date <= (x.get('end') or '')[:10]]
+
+
+def day_base(date):
+    """Where she wakes up and where she sleeps on that weekday, from day-base.csv (rows can expire)."""
+    wd = DAYS[datetime.strptime(date, '%Y-%m-%d').weekday()]
+    for r in read_table('day-base'):
+        if r['weekday'].lower() == wd and (not r.get('until') or date <= r['until']):
+            return r
+    return {}
+
+
 def check_clash(events, ctx):
+    """Is she free then? Overlaps that are not hers, containers (a blocker) and
+    her own placeholders (TEMP, PH, Me Time) do not stop anything. A fixed or unknown one asks."""
     said = (ctx.get('input') or '').lower()
-    existing = [x for x in (ctx.get('existing') or {}).get('events', []) if not x.get('allDay')]
-    out, asks, notes = [], [], ctx.setdefault('clash_notes', [])
+    out, asks, notes, seen = [], [], ctx.setdefault('clash_notes', []), []
     for e in events or []:
         if e.get('allDay'):
             out.append(e)
             continue
         s, en = e['date'] + 'T' + e['start'], e['date'] + 'T' + e['end']
-        hits = [x for x in existing if x['start'][:16] < en and x['end'][:16] > s]
+        hits = [x for x in day_events(ctx, e['date']) if not x.get('allDay') and x['start'][:16] < en and x['end'][:16] > s]
         for x in hits:
             kind, _ = booking_type(x)
             span = '%s %s-%s' % (x['title'], x['start'][11:16], x['end'][11:16])
-            if kind == 'container':
-                continue   # fine by definition, not worth a mention
-            elif kind == 'flexible':
+            if kind in ('container', 'place', 'not_mine') or 'lunch' in x['title'].lower():
+                continue   # not hers, fine inside, or lunch, which the routine check handles
+            if kind == 'flexible':
                 n = '%s overlaps %s, which can move' % (e['title'], span)
                 if n not in notes:
                     notes.append(n)
@@ -469,9 +496,150 @@ def check_clash(events, ctx):
                                          {'label': 'Things can always go inside "%s"' % x['title'], 'add': 'book anyway', 'save': 'container'},
                                          {'label': 'Do not book', 'stop': True}]})
         out.append(e)
+        # only what could really stop it counts in the answer, each name once
+        real = list(dict.fromkeys(x['title'] for x in hits if booking_type(x)[0] not in ('container', 'place', 'not_mine')
+                                  and 'lunch' not in x['title'].lower()))
+        if not real:
+            seen.append('Free then')
+        elif 'book anyway' in said:
+            seen.append('Booked anyway over ' + ', '.join(real))
+        else:
+            seen.append('Fine alongside ' + ', '.join(real))
     if asks:
         raise NeedAnswer(asks)
+    ctx['_note'] = '; '.join(seen)
     return out
+
+
+def free_slot(ctx, date, minutes, window, avoid):
+    """The first gap of that length inside the window, around everything already on the day and the new events."""
+    a, b = window.split('-')
+    busy = [(x['start'][11:16], x['end'][11:16]) for x in day_events(ctx, date)
+            if not x.get('allDay') and 'lunch' not in x['title'].lower() and booking_type(x)[0] not in ('container', 'not_mine')
+            and (datetime.fromisoformat(x['end']) - datetime.fromisoformat(x['start'])).total_seconds() < 4 * 3600]   # day-long blocks are background
+    busy += avoid
+    t = datetime.strptime(a, '%H:%M')
+    end = datetime.strptime(b, '%H:%M')
+    while t + timedelta(minutes=minutes) <= end:
+        s, e = t.strftime('%H:%M'), (t + timedelta(minutes=minutes)).strftime('%H:%M')
+        if not any(bs < e and be > s for bs, be in busy):
+            return s, e
+        t += timedelta(minutes=15)
+    return None
+
+
+def check_routine(events, ctx):
+    """Does it push out lunch? If you are already moving lunch that day, fine. Otherwise offer the next free slot."""
+    st = {r['setting']: r['value'] for r in read_table('settings')}
+    mins, window = int(st.get('lunch_minutes') or 45), st.get('lunch_window') or '11:30-14:30'
+    said = (ctx.get('input') or '').lower()
+    moving = {(m['date'], 'lunch') for m in ctx.get('moves') or [] if 'lunch' in (m.get('what') or '').lower()}
+    asks, seen = [], []
+    for e in events or []:
+        if e.get('allDay'):
+            continue
+        s, en = e['date'] + 'T' + e['start'], e['date'] + 'T' + e['end']
+        for x in day_events(ctx, e['date']):
+            if 'lunch' not in x['title'].lower() or x.get('allDay') or not (x['start'][:16] < en and x['end'][:16] > s):
+                continue
+            if (e['date'], 'lunch') in moving:
+                seen.append('Lunch is in the way, and you are moving it')
+                continue
+            if 'keep lunch' in said:
+                seen.append('Lunch stays where it is, as you said')
+                continue
+            slot = free_slot(ctx, e['date'], mins, window, [(e['start'], e['end'])])
+            opts = ([{'label': 'Move lunch to %s' % slot[0], 'add': 'move lunch to %s' % slot[0]}] if slot else []) + \
+                   [{'label': 'Keep lunch where it is', 'add': 'keep lunch'}, {'label': 'Do not book', 'stop': True}]
+            asks.append({'type': 'routine', 'text': '%s pushes out your %s %s-%s.' % (e['title'], x['title'], x['start'][11:16], x['end'][11:16]),
+                         'options': opts})
+    if asks:
+        raise NeedAnswer(asks)
+    ctx['_note'] = '; '.join(dict.fromkeys(seen)) or 'No lunch in the way'
+    return events
+
+
+def sort_activities(rows, ctx):
+    """Each column is one activity: new events go down the create checks, moves go to the move path."""
+    rows = rows or []
+    ctx['moves'] = [r for r in rows if r.get('action') == 'move']
+    creates = [r for r in rows if r.get('action') != 'move']
+    ctx['_note'] = '%d to create, %d to move' % (len(creates), len(ctx['moves']))
+    return creates
+
+
+def find_moves(moves, ctx):
+    """Find the event each move is about on that day, and work out its new time, keeping its length."""
+    out, asks = [], []
+    for m in moves or []:
+        want = norm_place(m.get('what'))
+        hits = [x for x in day_events(ctx, m['date']) if not x.get('allDay') and want and
+                (want in norm_place(x['title']) or norm_place(x['title']) in want)]
+        if not hits:
+            asks.append({'type': 'add', 'text': 'Which event is "%s" on %s?' % (m.get('what'), m['date']), 'placeholder': 'its name in your calendar'})
+            continue
+        x = hits[0]
+        if not m.get('start'):
+            asks.append({'type': 'add', 'text': 'What time should %s move to?' % x['title'], 'placeholder': 'e.g. 13:00'})
+            continue
+        length = datetime.fromisoformat(x['end']) - datetime.fromisoformat(x['start'])
+        end = m.get('end') or (datetime.strptime(m['start'], '%H:%M') + length).strftime('%H:%M')
+        out.append({'calId': x['calId'], 'id': x['id'], 'title': x['title'], 'date': m['date'], 'start': m['start'], 'end': end,
+                    'location': x.get('location', ''), 'was': x['start'][11:16]})
+    if asks:
+        raise NeedAnswer(asks)
+    if out:
+        ctx.setdefault('approved', set()).add('update_event')   # you asked for these moves yourself
+    ctx['to_update'] = out
+    ctx['_note'] = '; '.join('%s %s moves to %s' % (u['title'], u['was'], u['start']) for u in out) or 'Nothing to move'
+    return out
+
+
+def check_duplicate(events, ctx):
+    """Is it already there? Same title on the same day asks before adding a second one."""
+    said = (ctx.get('input') or '').lower()
+    asks = []
+    for e in events or []:
+        same = [x for x in day_events(ctx, e['date']) if norm_place(x['title']) == norm_place(e['title'])]
+        if same and 'add another' not in said:
+            x = same[0]
+            asks.append({'type': 'duplicate', 'text': '%s is already on %s at %s.' % (x['title'], e['date'], x['start'][11:16] or 'all day'),
+                         'options': [{'label': 'Add another', 'add': 'add another'}, {'label': 'Do not book', 'stop': True}]})
+    if asks:
+        raise NeedAnswer(asks)
+    ctx['_note'] = 'Adding another, as you said' if 'add another' in said else 'Not on that day yet'
+    return events
+
+
+def verify_intake(events, ctx):
+    """After grounding: answers to the flow's questions are not activities, a move names the event it moves,
+    and a move with no day of its own is on the day of the rest of the request."""
+    said = (ctx.get('input') or '').lower()
+    out = []
+    for e in events or []:
+        e = dict(e)
+        if re.match(r'^\s*(keep lunch|book anyway|add another)', str(e.get('what') or ''), re.I):
+            continue
+        e['action'] = 'move' if str(e.get('action') or '').lower() == 'move' else 'create'
+        if e['action'] == 'move':
+            e['what'] = re.sub(r'^\s*(move|shift|push|reschedule)\s+(my\s+|the\s+)?', '', str(e.get('what') or ''), flags=re.I).strip()
+            if not e.get('day') or str(e['day']).lower() not in said:
+                e['day'] = next((r.get('day') for r in events if r is not e and r.get('day') and str(r.get('day')).lower() in said), e.get('day'))
+        out.append(e)
+    return out
+
+
+def verify_created(after, ctx):
+    """Read the day back: is every event really there, at the right time?"""
+    if ctx.get('dry'):
+        ctx['_note'] = 'Test run, nothing to read back'
+        return {'checked': 'test run'}
+    evs = after if isinstance(after, list) else []
+    evs = [x for r in evs for x in (r if isinstance(r, list) else [r])]
+    missing = [e['title'] for e in ctx.get('to_create') or []
+               if not any(norm_place(x['title']) == norm_place(e['title']) and x['start'][11:16] == e.get('start', x['start'][11:16]) for x in evs)]
+    ctx['_note'] = 'All there, at the right time' if not missing else 'Missing: ' + ', '.join(missing)
+    return {'all_there': not missing, 'missing': missing}
 
 
 def save_booking_type(match, kind):
@@ -500,8 +668,14 @@ def summarise(created, ctx):
     lines = ['%s %s-%s %s (%s)' % (e['date'], e.get('start', ''), e.get('end', ''), e['title'], e.get('calendar', ''))
              for e in items]
     say = ('Created %d: ' % len(items) if not ctx.get('dry') else 'Would create %d: ' % len(items)) + '; '.join(lines)
-    links = [c.get('htmlLink') for c in (created if isinstance(created, list) else []) if isinstance(c, dict) and c.get('htmlLink')]
-    extra = (ctx.get('clash_notes') or []) + (ctx.get('travel_notes') or [])
+    for u in ctx.get('to_update') or []:
+        say += '. %s %s %s to %s' % ('Would move' if ctx.get('dry') else 'Moved', u['title'], u['was'], u['start'])
+    v = ctx.get('verified') or {}
+    if v.get('missing'):
+        say += '. NOT FOUND after creating: ' + ', '.join(v['missing'])
+    made = ctx.get('created')
+    links = [c.get('htmlLink') for c in (made if isinstance(made, list) else []) if isinstance(c, dict) and c.get('htmlLink')]
+    extra = (ctx.get('intake_fixes') or []) + (ctx.get('clash_notes') or []) + (ctx.get('travel_notes') or [])
     if extra:
         say += '. ' + '; '.join(extra)
     return {'say': say, 'links': links}
@@ -509,4 +683,6 @@ def summarise(created, ctx):
 
 STEPS = {'load_rules': load_rules, 'make_title': make_title, 'learn_travel': learn_travel, 'resolve_dates': resolve_dates, 'pick_calendar': pick_calendar,
          'add_travel': add_travel, 'summarise': summarise, 'fill_length': fill_length,
-         'check_clash': check_clash, 'add_notes': add_notes}
+         'check_clash': check_clash, 'add_notes': add_notes, 'verify_intake': verify_intake,
+         'check_routine': check_routine, 'check_duplicate': check_duplicate, 'verify_created': verify_created,
+         'sort_activities': sort_activities, 'find_moves': find_moves}
