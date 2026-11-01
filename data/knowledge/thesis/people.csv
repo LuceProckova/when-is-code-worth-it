@@ -1,0 +1,12 @@
+person,also_written_as,email,calendar,invite,company
+Martin,my boss; boss,martin@example.com,Work,yes,NW
+Mum,mama; mom,mum@example.com,Family,no,
+Sam,,sam@example.com,Friends,no,
+Jordan (work),jordan,jordan.work@example.com,Work,yes,NW
+Jordan (friend),jordan,jordan@example.com,Friends,no,
+Natalie,nataly,natalie@example.com,Friends,no,
+Arthur,,arthur@example.com,Friends,no,
+the team,team,team@example.com,Work,yes,NW
+the client,client,client@example.com,Work,yes,FAB
+Dad,dad,dad@example.com,Family,no,
+Dana,,dana@example.com,Me Time,no,
