@@ -1,0 +1,5 @@
+rule,pattern,when
+plain,{What},"just the thing, e.g. Gym"
+with_who,{What} with {who},"someone named, e.g. Drinks with Arthur"
+company,({SHORT}) {title},"work for a company, e.g. (NW) Standup"
+maybe,MAYBE {title},she is not sure yet

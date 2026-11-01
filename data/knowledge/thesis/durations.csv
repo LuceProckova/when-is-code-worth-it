@@ -1,0 +1,22 @@
+﻿activity,minutes,source
+lunch,45,settings.csv lunch_minutes
+dinner,90,test set
+breakfast,30,test set
+coffee,30,test set
+drinks,120,test set
+call,30,test set
+quick call,15,test set
+meeting,60,test set
+standup,30,test set
+dentist,60,test set
+doctor,30,test set
+haircut,45,test set
+gym,90,test set
+run,45,test set
+lecture,90,test set
+exam,120,test set
+workshop,180,test set
+train,60,test set
+physio,45,test set
+brunch,90,test set
+exercises,30,persona (1.11.26)

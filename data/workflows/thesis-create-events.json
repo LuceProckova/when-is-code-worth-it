@@ -1,0 +1,234 @@
+{
+  "id": "thesis-create-events",
+  "name": "Thesis test: create events (v2)",
+  "folder": "Thesis",
+  "draft": true,
+  "description": "thesis test, v2 30.10.26: the model reads the request into fixed slots and picks calendar and people; code does date maths, end times, RRULE checks, titles, emails, clashes and the write guard",
+  "examples": [
+    "Set up a call with Sam next Friday at 3 for an hour on Teams."
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "title": "Intake",
+      "kind": "model",
+      "role": "intake",
+      "reads": [
+        "today"
+      ],
+      "prompt": "Read this calendar request and fill one row per event (an instruction like \"send X an invite\", \"remind me\" or a note is part of its event, never a row of its own; a reminder, a door code, a note, an agenda or a bring list is never a row of its own either) with the fixed slots below. Leave a slot out if it is not said, never invent anything.\n\nToday is {today}. A date said without a year is the next one from today, never an earlier year.\n\nRequest: {input}\n\nwhat: what the event is, cleaned up: fix typos, write abbreviations in full and fix misheard words (tables below), but only when the heard words are really in the request: never copy a meant phrase from the table that the request does not say. No request words (add, schedule, set up, please, can you), no fillers (uh, the thing, or whatever), no people, day, time, place or repeat, and never the notes or a to-do list.\nwho: list of the people's names exactly as said (e.g. \"my boss\"), including anyone to invite (\"send <name> an invite\") and anyone given only as an email (write the email), empty list if nobody.\nday_words: the words for the day copied exactly as said, e.g. \"next tuesday\", \"in 3 days\", \"the first friday of december\", \"sometime next week\". Empty if no day is said.\nday: the same day as an object in one of these forms:\n  {\"kind\": \"date\", \"value\": \"YYYY-MM-DD\"} only when a full date with the year was said\n  {\"kind\": \"monthday\", \"month\": 3, \"day\": 14} a day and month without a year\n  {\"kind\": \"relative\", \"weekday\": \"friday\", \"which\": \"this\"} which is \"this\", \"next\" or \"coming\"\n  {\"kind\": \"offset\", \"days\": 2} for \"in 2 days\", \"in a week\" is 7\n  {\"kind\": \"nth\", \"n\": 2, \"weekday\": \"thursday\", \"month\": \"march\"} n is 1 to 4, or -1 for last; month can be \"this month\" or \"next month\"\n  {\"kind\": \"named\", \"value\": \"tomorrow\"} value is one of today, tomorrow, day after tomorrow, end of week, end of month, this weekend, next week\n  {} if no day is said\nstart_words: the words for the start time copied exactly as said, e.g. \"half 4\", \"at 3 pm\", \"noon\", \"after lunch\". Empty if not said.\nstart: the start time as HH:MM (24 hours). Work out spoken times: \"half 6\" is 18:30 for an evening thing, \"quarter to 1\" is 12:45. Soft times like \"in the morning\", \"after lunch\" or \"early\" use the settings table below. Empty if not said.\nafter_event: if it starts \"after my X\" (an appointment or meeting, not a meal), the X, e.g. \"physio\". Else empty.\nminutes: how long, as a number of minutes, if a length is said (e.g. \"for 2 hours\" is 120). Else empty.\nend: the end time as HH:MM only if an end time or a time range is said in words (never from \"in the afternoon\" or a length) (e.g. \"from 2 to 4 pm\" gives start 14:00 and end 16:00). Else empty.\npart_of_day: \"morning\", \"afternoon\" or \"evening\" only if it takes the whole part of the day (\"for the morning\", \"the whole afternoon\"). Else empty.\nall_day: true whenever they said \"all day\" or \"the whole day\", even if they also said a time.\nwhere: only a place the request actually says (never guess one):  the canonical name from the places table if it is one of them, a link copied exactly, a city or address as said, or \"A -> B\" for a trip from A to B. Only the one place name, never its list of other spellings. Empty if not said.\nrepeat: an RFC 5545 RRULE without UNTIL, e.g. FREQ=WEEKLY;BYDAY=WE or FREQ=MONTHLY;BYDAY=-1FR or FREQ=DAILY;COUNT=5. Empty if it happens once.\nuntil_words: the words after until/till for the repeat, e.g. \"Easter\" or \"end of March\". Else empty.\nmaybe: true if they are not sure (maybe, possibly, pencil in).\nnot_agreed: true if they said it is not agreed or not confirmed yet.\nbooked_no_invite: true if it is booked but the invitation has not gone out.\nconfirm_first: true if they asked you to check with them first before putting it in.\nnotes: the extra information said about the event (a note, quote, agenda, list, link, phone number, door code, a reminder), word for word, e.g. \"Door code is 1234.\" Never the length, time, day, repeat, place, room, people or an invite instruction (\"send <name> an invite\"), those have their own slots.\nask: only if the request contradicts itself in a way the slots cannot hold, or you cannot tell what the event is: the one question to ask. Else empty.\n\nTables, misheard words (heard,meant), abbreviations (short,long), places (place,also_written_as,address), settings (setting,value):\n{knowledge}\n\nAnswer as JSON {\"events\": [ ... ]}",
+      "out": "events",
+      "uses": [
+        "thesis/speech-fixes",
+        "thesis/abbreviations",
+        "thesis/places",
+        "thesis/settings"
+      ],
+      "asks": true,
+      "needs": {
+        "what": "required",
+        "who": "optional",
+        "day": "optional",
+        "start": "optional",
+        "minutes": "optional",
+        "end": "optional",
+        "where": "optional",
+        "repeat": "optional",
+        "notes": "optional"
+      },
+      "shows": [
+        "what",
+        "who",
+        "day",
+        "start",
+        "minutes",
+        "end",
+        "where",
+        "repeat",
+        "notes"
+      ]
+    },
+    {
+      "id": "when",
+      "title": "Which day and time?",
+      "kind": "code",
+      "fn": "thesis_when",
+      "in": "events",
+      "out": "dated",
+      "uses": [
+        "thesis/settings",
+        "thesis/existing-events",
+        "thesis/durations"
+      ],
+      "shows": [
+        "date",
+        "allDay",
+        "start",
+        "end"
+      ],
+      "asks": true,
+      "reads": [
+        "today"
+      ],
+      "after": [],
+      "needs": {
+        "date": "required",
+        "start": "required_unless_all_day",
+        "end": "required_unless_all_day"
+      }
+    },
+    {
+      "id": "repeat",
+      "title": "How often?",
+      "kind": "code",
+      "fn": "thesis_repeat",
+      "in": "dated",
+      "out": "repeated",
+      "shows": [
+        "rrule"
+      ],
+      "asks": true,
+      "after": [
+        "when"
+      ],
+      "needs": {
+        "rrule": "optional"
+      }
+    },
+    {
+      "id": "pick",
+      "title": "Which calendar, who exactly?",
+      "kind": "model",
+      "in": "events",
+      "prompt": "These are calendar events, each with a row number:\n{events}\n\nFor each event pick:\ncalendar: exactly one calendar name from the calendars table. Use this priority: a trip whose point is the journey itself (a train, flight or drive from one place to another) goes on the calendar whose use is travel, but an activity that happens on the move or at the other end (a bike ride, a workshop, a trip to the dentist) goes on that activity's calendar; else an activity keyword (e.g. gym, dentist) wins; else the company or work it is for; else the calendar of the person it is with; else IU. Anything with Martin (the boss) or for the client goes on Work, whatever the activity. Sport with friends goes on Friends. A place never decides the calendar, only the activity and the people do, but a family member's home counts as being with them (dinner at Mum's is Family). The trip rule comes before all others. Always pick exactly one calendar.\npeople: for every name in who, the exact text of the person column of the people table, with the brackets, e.g. \"Martin\" (only people in who, never add anyone; if a name fits two rows of the people table, the work one only when the event is work, else the other one). If a name is not in the table, copy it as said.\n\nCalendars (calendar,keywords,use) and people (person,also_written_as,email,calendar):\n{knowledge}\n\nAnswer as JSON {\"picks\": [{\"row\": 1, \"calendar\": \"...\", \"people\": [\"...\"]}]}",
+      "out": "picks",
+      "uses": [
+        "thesis/calendars",
+        "thesis/people"
+      ],
+      "after": [],
+      "needs": {
+        "calendar": "required",
+        "people": "optional"
+      },
+      "shows": [
+        "calendar",
+        "people"
+      ]
+    },
+    {
+      "id": "notes",
+      "title": "Anything for the notes?",
+      "kind": "model",
+      "in": "events",
+      "when": "any:notes",
+      "after": [],
+      "prompt": "These are calendar events with the notes the user dictated, each with a row number:\n{events}\n\nFor each event that has notes write:\nrow: its row number\ndesc: the information worth keeping from its notes as a short note in the third person. Keep links, numbers and codes exactly. Empty if nothing is worth keeping.\nreminder_minutes: only if the user literally asked to be reminded (\"remind me\"), how many minutes before (an hour is 60, a day is 1440, a week is 10080), else 0. Do not put the reminder into desc.\n\nAnswer as JSON {\"notes\": [ ... ]}",
+      "out": "notes",
+      "needs": {
+        "desc": "optional",
+        "reminder_minutes": "optional"
+      },
+      "may_be_empty": true,
+      "shows": [
+        "desc",
+        "reminder_minutes"
+      ]
+    },
+    {
+      "id": "title",
+      "title": "What is it called?",
+      "kind": "code",
+      "fn": "thesis_title",
+      "in": "repeated",
+      "join": [
+        "picks"
+      ],
+      "out": "named",
+      "uses": [
+        "thesis/naming",
+        "thesis/companies"
+      ],
+      "shows": [
+        "title"
+      ],
+      "asks": true,
+      "after": [
+        "repeat",
+        "pick"
+      ],
+      "needs": {
+        "title": "required"
+      }
+    },
+    {
+      "id": "check",
+      "title": "Calendar, people, clashes",
+      "kind": "code",
+      "fn": "thesis_check",
+      "in": "named",
+      "join": [
+        "picks",
+        "notes"
+      ],
+      "out": "result",
+      "uses": [
+        "thesis/calendars",
+        "thesis/people",
+        "thesis/existing-events"
+      ],
+      "shows": [
+        "title",
+        "date",
+        "start",
+        "end",
+        "calendar",
+        "attendees"
+      ],
+      "asks": true,
+      "after": [
+        "title",
+        "notes"
+      ],
+      "needs": {
+        "calendar": "required"
+      }
+    },
+    {
+      "id": "ask",
+      "title": "Ask you",
+      "kind": "human",
+      "in": "asks",
+      "when": "asks",
+      "out": "answers",
+      "after": [
+        "check"
+      ],
+      "shows": [
+        "text"
+      ]
+    },
+    {
+      "id": "create",
+      "title": "Put it in",
+      "kind": "tool",
+      "connection": "google-calendar",
+      "tool": "create_event",
+      "in": "result",
+      "each": true,
+      "unless": "asks",
+      "prepare": "thesis_test_send",
+      "out": "created",
+      "role": "act",
+      "after": [
+        "check"
+      ],
+      "shows": [
+        "title",
+        "date",
+        "start",
+        "end"
+      ]
+    }
+  ]
+}
