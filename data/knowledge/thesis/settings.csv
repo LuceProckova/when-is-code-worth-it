@@ -1,0 +1,27 @@
+setting,value
+home,Home
+timezone,Europe/Bratislava
+default_minutes,30
+maps_padding_minutes,15
+tomorrow_means_today_before,05:00
+lunch_minutes,45
+lunch_window,11:30-14:30
+morning_start,09:00
+afternoon_start,14:00
+evening_start,19:00
+early_start,08:00
+after_breakfast_start,09:30
+after_lunch_start,13:30
+noon,12:00
+half_day_morning,08:00-12:00
+all_day,true
+quick_minutes,15
+late_morning_start,11:00
+lunchtime,12:00
+after_dinner_start,20:00
+half_day_afternoon,12:00-18:00
+half_day_evening,18:00-22:00
+test_calendar,IU
+vocabulary,meeting; dentist; therapy; family; Christmas; birthday; brunch; breakfast; client; report; deadline; class; review; workshop; virtual; party; walk; check
+next_means,coming
+test_calendar_id,
