@@ -15,7 +15,7 @@ FIELDS = ["title", "date", "start", "end", "all_day", "location", "attendees", "
 FIELD_LETTER = {"W": "date", "D": "date", "S": "start", "L": "end", "T": "title", "P": "location",
                 "A": "attendees", "N": "description", "C": "calendar", "R": "rrule"}
 ASK_WORDS = {"calendar": ["calendar"], "attendees": ["which", "who", "attendee", "invite"],
-             "date": ["day", "date", "which day"], "start": ["start", "time", "morning", "all day", "or"],
+             "date": ["day", "date", "which day"], "start": ["start", "time", "morning", "all day", " or ", "clash", "book anyway"],
              "end": ["end", "how long", "length"], "location": ["where", "location"]}
 SEED = 20261030
 
@@ -26,10 +26,76 @@ def norm_text(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
+PLACES_CSV = "C:/Users/lucyp/Desktop/All-My-Stuff/0-AI-Solutions/08-Master-Interface/03 - My Data/knowledge/thesis/places.csv"
+PLACE_ADDRESS = None
+
+
+def place_by_address(t):
+    """A place written as its address in the places table counts as that place ("5 Market Street" = "Office", 2.11.26)."""
+    global PLACE_ADDRESS
+    if PLACE_ADDRESS is None:
+        import csv as _csv
+        PLACE_ADDRESS = {}
+        if os.path.exists(PLACES_CSV):
+            for r in _csv.DictReader(open(PLACES_CSV, encoding="utf-8-sig")):
+                a = (r.get("address") or "").strip()
+                if a and a.lower() != "online":
+                    PLACE_ADDRESS[norm_text(a)] = norm_text(r["place"])
+    return PLACE_ADDRESS.get(t, t)
+
+
+def norm_place(s):
+    """A place as text: "room B204" = "B204", "Vienna to Bratislava" = "Vienna -> Bratislava"."""
+    t = place_by_address(norm_text(s))
+    t = re.sub(r"^(in|at|the|room)\s+", "", t)
+    t = re.sub(r"^(in|at|the|room)\s+", "", t)
+    return re.sub(r"\s*(->|-\s*>|\bto\b)\s*", " -> ", t).strip()
+
+
 def norm_title(s):
     s = norm_text(s)
     s = re.sub(r"^(set up|schedule|book|put|add)\s+", "", s)
     return re.sub(r"[^\w()]", "", s.replace(" ", ""))
+
+
+TITLE_STOP = {"the", "a", "an", "that", "this", "my", "our", "have", "do", "get", "go", "with", "and", "of", "to", "for", "at", "on", "in", "some", "thing"}
+PREFIX = re.compile(r"^(maybe\s+)?(\((\w+)\)\s*|temp\s*-\s*(\w+)\s*-\s*|ph\s*-\s*(\w+)\s*-\s*)?", re.I)
+
+
+def title_parts(t):
+    """(prefix, people, content stems) of a title: "MAYBE (NW) Long breakfast with Martin and the client"."""
+    t = unicodedata.normalize("NFKC", str(t or "")).strip()
+    tags = [x.upper() for x in re.findall(r"\((NW|FAB)\)", t, re.I)]   # a company tag counts wherever it stands (4.11.26)
+    t = re.sub(r"\s*\((?:NW|FAB)\)\s*", " ", t, flags=re.I).strip()
+    m = PREFIX.match(t)
+    pre = (re.sub(r"\s+", " ", (m.group(0) if m else "")).strip().casefold() + " " + " ".join("(%s)" % x.lower() for x in tags)).strip()
+    rest = t[m.end():] if m else t
+    what, _, who = rest.partition(" with ")
+    people = frozenset(x.strip().casefold() for x in re.split(r"\s+and\s+|,", who) if x.strip())
+    words = {w[:5] for w in re.findall(r"[\w']+", what.casefold()) if w not in TITLE_STOP}
+    return pre, people, words
+
+
+NAMES = {"martin", "sam", "jordan", "natalie", "arthur", "mum", "dad", "dana", "team", "client"}
+
+
+def title_same(gold, pred):
+    """Prefix exact; the people named anywhere in the title the same set ("Team lunch" = "Lunch with the team");
+    the other event words free: the two share at least one content word (2.11.26: the key was too harsh for a
+    model that words things its own way; was: one set of words contains the other)."""
+    g, p = title_parts(gold), title_parts(pred)
+    if g[0] != p[0]:
+        return False
+    def split(t):
+        rest = PREFIX.sub("", unicodedata.normalize("NFKC", str(t or "")).strip(), count=1).casefold()
+        words = {w for w in re.findall(r"[\w']+", rest) if w not in TITLE_STOP}
+        names = {w for w in words if w.rstrip("'s") in NAMES and not w.endswith("'s")}
+        if not names:   # "Dinner at Mum's" names Mum, as "Dinner with Mum" does (4.11.26; rule 2.11.26: at Mum's = with Mum)
+            names = {w[:-2] for w in words if w.endswith("'s") and w[:-2] in NAMES}
+        return names, {w[:5] for w in words - names}
+    gn, gw = split(gold)
+    pn, pw = split(pred)
+    return gn == pn and bool(gw) and bool(pw) and bool(gw & pw)
 
 
 def emails(v):
@@ -56,7 +122,8 @@ def key_items(text):
 
 
 def rrule_same(gold, pred, start):
-    g, p = (gold or "").strip(), (pred or "").strip()
+    day3 = lambda r: re.sub(r"\b(MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*\b", lambda m: m.group(1)[:2], r.upper())   # THU = TH
+    g, p = day3((gold or "").strip()), day3((pred or "").strip())
     if not g or not p:
         return not g and not p
     try:
@@ -79,14 +146,15 @@ def score_row(gold, result):
     events = (result or {}).get("events") or []
     asks = [str(a) for a in ((result or {}).get("asks") or [])]
     should_ask_row = bool(gold["ask"].strip())
-    should_ask_any = should_ask_row or any(gold[f] == "ask" for f in FIELDS)
+    clash = bool((gold.get("clash") or "").strip())   # overlaps an existing event: ask "book anyway?", fields still marked (3.11.26)
+    should_ask_any = should_ask_row or clash or any(gold[f] == "ask" for f in FIELDS)
     out = {"asked": int(bool(asks)), "should_ask": int(should_ask_any)}
     out["ask_correct"] = int(bool(asks) == should_ask_any)
     if should_ask_row:  # contradiction row: only the ask is scored
         out.update({f: None for f in FIELDS})
         out["event"] = int(bool(asks) and asked_about(asks, "start"))
         return out
-    ev = events[0] if len(events) == 1 else None
+    ev = events[0] if events else None   # several events: the fields of the first are still marked one by one (2.11.26)
     try:
         start = datetime.fromisoformat(f"{gold['date']}T{gold['start'] or '00:00'}")
     except ValueError:
@@ -105,18 +173,48 @@ def score_row(gold, result):
         elif f == "all_day":
             out[f] = int(boolish(gv) == boolish(pv))
         elif f == "location":
-            out[f] = int(norm_text(gv) == norm_text(pv))
+            out[f] = int(norm_place(gv) == norm_place(pv))
         elif f == "attendees":
             out[f] = int(emails(gv) == emails(pv))
         elif f == "title":
-            out[f] = int(norm_title(gv) == norm_title(pv))
+            out[f] = int(norm_title(gv) == norm_title(pv) or title_same(gv, pv))
         elif f == "rrule":
             out[f] = int(rrule_same(gv, pv, start)) if start else int(gv == (pv or ""))
         elif f == "description":
-            out[f] = int(key_items(gv) <= key_items(pv) | {re.sub(r"\s", "", x) for x in key_items(pv)})
+            kept = key_items(gv) <= key_items(pv) | {re.sub(r"\s", "", x) for x in key_items(pv)}
+            out[f] = int(kept and not (str(gv or "").strip() and not str(pv or "").strip()))   # a note in the key must not be left out (4.11.26)
     scored = [out[f] for f in FIELDS if out[f] is not None]
-    out["event"] = int(all(scored) and (not asks or should_ask_any))
+    out["extra_events"] = max(len(events) - 1, 0)
+    out["event"] = int(all(scored) and (not asks or should_ask_any) and (bool(asks) or not clash) and len(events) == 1)   # an extra event still makes the request wrong
     return out
+
+
+FLOW_CONDITION = {"thesis-create-events": "code", "thesis-create-events-allmodel": "allmodel"}
+# planned paired comparisons (first is primary): only the pairs whose two conditions are in the logs are run
+PAIRS = [("allmodel", "code"), ("oneprompt72b", "oneprompt7b"), ("oneprompt7b", "allmodel"), ("oneprompt7b", "code"),
+         ("claude", "oneprompt72b")]
+
+
+def read_log(path, partial=False):
+    """Request records from a run_tests.py or run_baseline.py log, each with a condition and one energy value.
+    run_tests.py: only repeats that finished with a block line count, so a repeat cut short by a stop is left out."""
+    recs, blocks = [], set()
+    for line in open(path, encoding="utf-8"):
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        t = d.get("type")
+        if t == "block":
+            blocks.add((d["flow"], d["rep"]))
+        if t in ("header", "idle", "block", "warmup", "abort") or d.get("warmup"):
+            continue
+        d["condition"] = d.get("condition") or FLOW_CONDITION.get(d.get("flow"), d.get("flow"))
+        if d.get("gpu_joules") is None:
+            d["gpu_joules"] = d.get("gpu_joules_net") if d.get("gpu_joules_net") is not None else d.get("gpu_joules_counter")
+        recs.append(d)
+    if partial:   # development log only: a run stopped early still shows what it did
+        return recs
+    return [d for d in recs if "flow" not in d or (d["flow"], d["rep"]) in blocks]
 
 
 def canon(result):
@@ -165,9 +263,8 @@ def main():
 
     runs = collections.defaultdict(lambda: collections.defaultdict(list))
     for path in a.logs:
-        for line in open(path, encoding="utf-8"):
-            if line.strip():
-                d = json.loads(line); runs[d["condition"]][str(d["id"])].append(d)
+        for d in read_log(path):
+            runs[d["condition"]][str(d["id"])].append(d)
     conds = sorted(runs)
     ids = sorted(gold, key=int)
 
@@ -219,6 +316,11 @@ def main():
     L = ["# Results summary", "", f"Logs: {', '.join(os.path.basename(p) for p in a.logs)}. Gold: {os.path.basename(a.gold)}. Unit: request, modal output across repeats.", ""]
     L += ["## Accuracy per field (Wilson 95% CI)", "", "| condition | field | n | correct | accuracy | 95% CI |", "|---|---|---|---|---|---|"]
     L += [f"| {r['condition']} | {r['field']} | {r['n']} | {r['correct']} | {r['accuracy']} | {r['ci_low']} to {r['ci_high']} |" for r in rows]
+    L += ["", "## Fields right per request (mean of the scored fields, out of 10; contradiction rows left out)", ""]
+    for c in conds:
+        per = [sum(x[f] for f in FIELDS if x[f] is not None) for x in scores[c].values() if any(x[f] is not None for f in FIELDS)]
+        if per:
+            L.append(f"- {c}: mean {np.mean(per):.2f} of 10, median {np.median(per):.1f}, n {len(per)}")
     L += ["", "## Asks", "", "| condition | true ask | false ask | missed ask | recall | false-ask rate |", "|---|---|---|---|---|---|"]
     for c in conds:
         s = scores[c].values()
@@ -236,15 +338,17 @@ def main():
             if len(v):
                 L.append(f"- {c} {k}: median {np.median(v):.2f}, mean {v.mean():.2f}, n {len(v)}")
 
-    if len(conds) >= 2:
-        A, B = conds[0], conds[1]
+    pairs = [(x, y) for x, y in PAIRS if x in scores and y in scores]
+    if not pairs and len(conds) >= 2:
+        pairs = [(conds[0], conds[1])]
+    for A, B in pairs:
         common = [i for i in ids if i in scores[A] and i in scores[B]]
         L += ["", f"## Paired comparison {B} vs {A} (n = {len(common)} requests)", "",
               "| field | b (A right, B wrong) | c (A wrong, B right) | exact McNemar p | Holm p |", "|---|---|---|---|---|"]
         res = []
         for f in metrics:
-            pairs = [(scores[A][i][f], scores[B][i][f]) for i in common if scores[A][i][f] is not None]
-            res.append((f,) + mcnemar([p[0] for p in pairs], [p[1] for p in pairs]))
+            pr = [(scores[A][i][f], scores[B][i][f]) for i in common if scores[A][i][f] is not None and scores[B][i][f] is not None]
+            res.append((f,) + mcnemar([p[0] for p in pr], [p[1] for p in pr]))
         adj = holm([r[3] for r in res if r[0] not in ("event",)])
         it = iter(adj)
         for f, b, cc, p in res:
@@ -256,9 +360,13 @@ def main():
                 x, y = zip(*ok)
                 st = wilcoxon(x, y)
                 r, lo, hi = boot_ratio(x, y)
-                L.append(f"- {k}: ratio {B}/{A} {r:.3f} (bootstrap 95% CI {lo:.3f} to {hi:.3f}), Wilcoxon W {st.statistic:.1f}, p {st.pvalue:.4g}")
-    else:
+                note = " (different machines: compares two deployments, not two model sizes)" if k == "joules" and {A, B} & {"oneprompt72b"} else ""
+                L.append(f"- {k}: ratio {B}/{A} {r:.3f} (bootstrap 95% CI {lo:.3f} to {hi:.3f}), Wilcoxon W {st.statistic:.1f}, p {st.pvalue:.4g}{note}")
+    if not pairs:
         L += ["", "Only one condition in the logs, so McNemar, Wilcoxon and the bootstrap ratio are skipped."]
+    if pairs:
+        A, B = pairs[0]
+        common = [i for i in ids if i in scores[A] and i in scores[B]]
     open(os.path.join(a.out, "summary.md"), "w", encoding="utf-8").write("\n".join(L) + "\n")
 
     try:
@@ -275,10 +383,10 @@ def main():
     ax.set_xlim(0, 1); ax.set_xlabel("Accuracy (95% Wilson CI)"); ax.legend(frameon=False); fig.tight_layout()
     fig.savefig(os.path.join(a.out, "accuracy_per_field.png"), dpi=150); plt.close(fig)
     fig, ax = plt.subplots(figsize=(6, 5))
-    if len(conds) >= 2:
-        x = [cost[conds[0]][i]["joules"] for i in common]; y = [cost[conds[1]][i]["joules"] for i in common]
+    if pairs:
+        x = [cost[A][i]["joules"] for i in common]; y = [cost[B][i]["joules"] for i in common]
         ax.loglog(x, y, "o", alpha=.6); lim = [min(x + y), max(x + y)]; ax.plot(lim, lim, "k-", lw=.8)
-        ax.set_xlabel(f"{conds[0]} J per request"); ax.set_ylabel(f"{conds[1]} J per request")
+        ax.set_xlabel(f"{A} J per request"); ax.set_ylabel(f"{B} J per request")
     else:
         for c in conds:
             ax.hist([cost[c][i]["joules"] for i in cost[c]], bins=20, label=c)

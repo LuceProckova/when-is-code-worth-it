@@ -1,0 +1,142 @@
+{
+ "type": "object",
+ "properties": {
+  "events": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "people": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "said": {
+         "type": "string"
+        },
+        "row": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "said",
+        "row"
+       ]
+      }
+     },
+     "title": {
+      "type": "string"
+     },
+     "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+     },
+     "end_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+     },
+     "start": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+     },
+     "end": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+     },
+     "allDay": {
+      "type": "boolean"
+     },
+     "location": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "attendees": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "email": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "name",
+        "email"
+       ]
+      }
+     },
+     "calendar": {
+      "type": "string",
+      "enum": [
+       "Travelling Buffer",
+       "Me Time",
+       "Love",
+       "Friends",
+       "AirBNB",
+       "Self-Improvement",
+       "IU",
+       "Family",
+       "Work",
+       "UK",
+       "VoAI"
+      ]
+     },
+     "rrule": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "desc": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "reminder_minutes": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     }
+    },
+    "required": [
+     "people",
+     "title",
+     "date",
+     "end_date",
+     "start",
+     "end",
+     "allDay",
+     "location",
+     "attendees",
+     "calendar",
+     "rrule",
+     "desc",
+     "reminder_minutes"
+    ]
+   }
+  },
+  "asks": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "required": [
+  "events",
+  "asks"
+ ]
+}

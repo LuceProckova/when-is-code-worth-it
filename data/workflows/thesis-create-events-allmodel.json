@@ -1,0 +1,1304 @@
+{
+  "id": "thesis-create-events-allmodel",
+  "name": "Thesis test: create events (all model)",
+  "folder": "Thesis",
+  "draft": true,
+  "description": "the thesis test version of create events, all-model condition: cut for a small model, one small decision per step (14 model steps), each with only its rule and table; plain code only carries the rows (1.11.26)",
+  "examples": [
+    "Set up a call with Sam next Friday at 3 for an hour on Teams."
+  ],
+  "steps": [
+    {
+      "id": "read",
+      "title": "Intake",
+      "kind": "model",
+      "role": "intake",
+      "reads": [
+        "today"
+      ],
+      "prompt": "Read this calendar request and fill one row per event (an instruction like \"send X an invite\", \"remind me\" or a note is part of its event, never a row of its own; a reminder, a door code, a note, an agenda or a bring list is never a row of its own either) with the fixed slots below. Leave a slot out if it is not said, never invent anything.\n\nToday is {today}. A date said without a year is the next one from today, never an earlier year.\n\nRequest: {input}\n\nwhat: what the event is, cleaned up: fix typos, write abbreviations in full and fix misheard words (tables below), but only when the heard words are really in the request: never copy a meant phrase from the table that the request does not say. No request words (add, schedule, set up, please, can you), no fillers (uh, the thing, or whatever), no people, day, time, place or repeat, and never the notes or a to-do list.\nwho: list of the people's names exactly as said (e.g. \"my boss\"), including anyone to invite (\"send <name> an invite\") and anyone given only as an email (write the email), empty list if nobody.\nday_words: the words for the day copied exactly as said, e.g. \"next tuesday\", \"in 3 days\", \"the first friday of december\", \"sometime next week\". Empty if no day is said.\nday: the same day as an object in one of these forms:\n  {\"kind\": \"date\", \"value\": \"YYYY-MM-DD\"} only when a full date with the year was said\n  {\"kind\": \"monthday\", \"month\": 3, \"day\": 14} a day and month without a year\n  {\"kind\": \"relative\", \"weekday\": \"friday\", \"which\": \"this\"} which is \"this\", \"next\" or \"coming\"\n  {\"kind\": \"offset\", \"days\": 2} for \"in 2 days\", \"in a week\" is 7\n  {\"kind\": \"nth\", \"n\": 2, \"weekday\": \"thursday\", \"month\": \"march\"} n is 1 to 4, or -1 for last; month can be \"this month\" or \"next month\"\n  {\"kind\": \"named\", \"value\": \"tomorrow\"} value is one of today, tomorrow, day after tomorrow, end of week, end of month, this weekend, next week\n  {} if no day is said\nstart_words: the words for the start time copied exactly as said, e.g. \"half 4\", \"at 3 pm\", \"noon\", \"after lunch\". Empty if not said.\nstart: the start time as HH:MM (24 hours). Work out spoken times: \"half 6\" is 18:30 for an evening thing, \"quarter to 1\" is 12:45. Soft times like \"in the morning\", \"after lunch\" or \"early\" use the settings table below. Empty if not said.\nafter_event: if it starts \"after my X\" (an appointment or meeting, not a meal), the X, e.g. \"physio\". Else empty.\nminutes: how long, as a number of minutes, if a length is said (e.g. \"for 2 hours\" is 120). Else empty.\nend: the end time as HH:MM only if an end time or a time range is said in words (never from \"in the afternoon\" or a length) (e.g. \"from 2 to 4 pm\" gives start 14:00 and end 16:00). Else empty.\npart_of_day: \"morning\", \"afternoon\" or \"evening\" only if it takes the whole part of the day (\"for the morning\", \"the whole afternoon\"). Else empty.\nall_day: true whenever they said \"all day\" or \"the whole day\", even if they also said a time.\nwhere: only a place the request actually says (never guess one):  the canonical name from the places table if it is one of them, a link copied exactly, a city or address as said, or \"A -> B\" for a trip from A to B. Only the one place name, never its list of other spellings. Empty if not said.\nrepeat: an RFC 5545 RRULE without UNTIL, e.g. FREQ=WEEKLY;BYDAY=WE or FREQ=MONTHLY;BYDAY=-1FR or FREQ=DAILY;COUNT=5. Empty if it happens once.\nuntil_words: the words after until/till for the repeat, e.g. \"Easter\" or \"end of March\". Else empty.\nmaybe: true if they are not sure (maybe, possibly, pencil in).\nnot_agreed: true if they said it is not agreed or not confirmed yet.\nbooked_no_invite: true if it is booked but the invitation has not gone out.\nconfirm_first: true if they asked you to check with them first before putting it in.\nnotes: the extra information said about the event (a note, quote, agenda, list, link, phone number, door code, a reminder), word for word, e.g. \"Door code is 1234.\" Never the length, time, day, repeat, place, room, people or an invite instruction (\"send <name> an invite\"), those have their own slots.\nask: only if the request contradicts itself in a way the slots cannot hold, or you cannot tell what the event is: the one question to ask. Else empty.\n\nTables, misheard words (heard,meant), abbreviations (short,long), places (place,also_written_as,address), settings (setting,value):\n{knowledge}\n\nAnswer as JSON {\"events\": [ ... ]}",
+      "out": "events",
+      "uses": [
+        "thesis/speech-fixes",
+        "thesis/abbreviations",
+        "thesis/places",
+        "thesis/settings"
+      ],
+      "asks": true,
+      "needs": {
+        "what": "required",
+        "who": "optional",
+        "day": "optional",
+        "start": "optional",
+        "minutes": "optional",
+        "end": "optional",
+        "where": "optional",
+        "repeat": "optional",
+        "notes": "optional"
+      },
+      "shows": [
+        "what",
+        "who",
+        "day",
+        "start",
+        "minutes",
+        "end",
+        "where",
+        "repeat",
+        "notes"
+      ]
+    },
+    {
+      "id": "words",
+      "title": "What is the event?",
+      "kind": "model",
+      "in": "events",
+      "out": "r_words",
+      "merge": "events",
+      "uses": [
+        "thesis/speech-fixes",
+        "thesis/abbreviations"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": true,
+      "needs": {},
+      "shows": [
+        "own_event",
+        "said",
+        "fixes",
+        "what"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{events}\n\nEach row is one event the first reading found; its what is a first guess.\n- own_event: \"no\" if this row is not an event of its own: a reminder (\"the day before\"), a note, a door code, a bring list, or another name for an earlier row's event (\"the report\" in \"the deadline thing, the report or whatever\" is the same event as the deadline). Row 1 is always \"yes\". Else \"yes\".\nThen write the name of the event, using the request's own words.\n1. Drop request words: schedule, set up, add, put, create, book, make, block, please, can you.\n2. Drop fillers: uh, uhh, finally, quick, just, maybe, \"the ... thing\", \"or whatever\".\n3. Stop before \"with\", a day, a time, a place, \"for\", \"every\".\nFill the boxes in order:\n- said: the event's name as the request says it, after rules 1 to 3: stop at the first word that is a day (\"tomorrow\", \"next Tuesday\", \"the first Saturday of December\"), a time, a place, a person, \"with\", \"w/\", \"for\", \"every\" or \"here\".\n- fixes: every word of said that is in the short column of the abbreviations table or the heard column of the speech fixes table, as \"short -> long\". None: [].\n- what: said with those fixes made, and obvious typos fixed (\"meetng\" -> \"meeting\").\nExamples (made up): \"Set up meetng with Tom next Friday\" -> \"meeting\". \"Add uh the budget thing, the spreadsheet or whatever, with Eva\" -> \"budget\". \"Schedule finally sort out the garden shed this weekend\" -> \"sort out the garden shed\".\nA row with own_event \"no\" needs nothing else filled.\n\nFor every row give back only \"row\" and \"own_event\", \"said\", \"fixes\", \"what\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_words\": [{\"row\": 1, \"own_event\": ..., \"said\": ..., \"fixes\": ..., \"what\": ...}]}. The top-level key must be exactly \"r_words\".",
+      "may_be_empty": true,
+      "view": [
+        "what"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_words": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "own_event": {
+                  "type": "string",
+                  "enum": [
+                    "yes",
+                    "no"
+                  ]
+                },
+                "said": {
+                  "type": "string"
+                },
+                "fixes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "what": {
+                  "type": "string"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "own_event",
+                "said",
+                "fixes",
+                "what"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_words"
+        ]
+      }
+    },
+    {
+      "id": "people",
+      "title": "Who is it with?",
+      "kind": "model",
+      "in": "r_words",
+      "out": "r_people",
+      "merge": "r_words",
+      "uses": [
+        "thesis/people"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "people"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_words}\n\nWho does the request name? Write each person as the people table writes them, without the brackets.\n- \"my boss\" or \"boss\" = Martin. \"the team\" and \"the client\" stay as they are.\n- An email = that person's name from the people table (eva@example.com = Eva).\n- \"X's\" (Mum's, Nat's) is a place, not the person coming along.\n- Only people the request names. Nobody named: [].\nExamples (made up): \"drinks with Tom and Eva\" -> [\"Tom\", \"Eva\"]. \"train to Grandad's\" -> []. \"call with eva@example.com\" -> [\"Eva\"].\n\nFor every row give back only \"row\" and \"people\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_people\": [{\"row\": 1, \"people\": ...}]}. The top-level key must be exactly \"r_people\".",
+      "may_be_empty": true,
+      "view": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_people": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "people"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_people"
+        ]
+      }
+    },
+    {
+      "id": "maybe",
+      "title": "Is Alex unsure?",
+      "kind": "model",
+      "in": "r_people",
+      "out": "r_maybe",
+      "merge": "r_people",
+      "uses": [],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "maybe"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_people}\n\nIs Alex unsure? true only if the request says \"maybe\", \"possibly\" or \"pencil in\". Else false.\n\nFor every row give back only \"row\" and \"maybe\", nothing else; the other fields are kept for you.\n\nAnswer as JSON {\"r_maybe\": [{\"row\": 1, \"maybe\": ...}]}. The top-level key must be exactly \"r_maybe\".",
+      "may_be_empty": true,
+      "view": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_maybe": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "maybe": {
+                  "type": "boolean"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "maybe"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_maybe"
+        ]
+      }
+    },
+    {
+      "id": "date",
+      "title": "Which day?",
+      "kind": "model",
+      "in": "r_maybe",
+      "out": "r_date",
+      "merge": "r_maybe",
+      "uses": [
+        "thesis/days"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": true,
+      "needs": {
+        "date": "required"
+      },
+      "shows": [
+        "today",
+        "day_words",
+        "kind",
+        "wanted",
+        "today_row",
+        "next_days",
+        "date"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_maybe}\n\nWhich date is the event? The days table lists every date with its weekday, one row per day, in order. Fill the boxes in order.\n- today: copy today's weekday and date from the top, e.g. \"Saturday 2026-11-07\".\n- day_words: copy the request's words that say the day, e.g. \"next Tuesday\", \"on 15 November\", \"in 3 days\". None: \"no\".\n- kind: pick the first that fits:\n  \"date\" if a day of the month is written (\"15 November\", \"the 3rd\", \"2026-11-16\"),\n  \"nth\" if it says \"the first/second/last <weekday> of <month>\",\n  \"weekday\" if a weekday name is said, with or without next or this (\"Tuesday\", \"next Tuesday\", \"this Sunday\"),\n  \"tomorrow\", \"day after tomorrow\", \"in N days\", \"end of week\", \"end of month\",\n  \"next week\" only for the words \"next week\" with no weekday name,\n  \"none\" if no day is said.\n- wanted: the weekday to look for: weekday: the said weekday (\"Saturday\"). end of week: \"Friday\". next week: \"Monday\". Other kinds: \"\".\n- today_row: find today's date in the days table and copy that row, e.g. \"2026-11-07,Saturday\".\n- next_days: the 7 rows of the days table right after today_row, in order, each labelled: \"in 1 day (tomorrow): Sunday 2026-11-08\", \"in 2 days: Monday 2026-11-09\", ... up to \"in 7 days: ...\". Today itself is not in it.\n- date:\n  none: today's date, copied from the today box.\n  tomorrow: the item \"in 1 day (tomorrow)\". day after tomorrow: the item \"in 2 days\".\n  weekday, end of week, next week: the one of next_days whose weekday is wanted.\n  in N days: the item \"in N days\" (in 3 days: the item \"in 3 days\"). More than 7 days: N rows below today_row in the days table.\n  date: the written day and month, no counting. The year is today's year, the next year only if that day has passed.\n  nth: in that month in the days table, the first row with that weekday (second: the second such row, last: the last).\n  end of month: the last row of this month.\nThe date is written year first: <year>-<month>-<day>, never the day first.\n\nFor every row give back only \"row\" and \"today\", \"day_words\", \"kind\", \"wanted\", \"today_row\", \"next_days\", \"date\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_date\": [{\"row\": 1, \"today\": ..., \"day_words\": ..., \"kind\": ..., \"wanted\": ..., \"today_row\": ..., \"next_days\": ..., \"date\": ...}]}. The top-level key must be exactly \"r_date\".",
+      "may_be_empty": true,
+      "view": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_date": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "today": {
+                  "type": "string"
+                },
+                "day_words": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "tomorrow",
+                    "day after tomorrow",
+                    "in N days",
+                    "weekday",
+                    "date",
+                    "nth",
+                    "end of week",
+                    "next week",
+                    "end of month"
+                  ]
+                },
+                "wanted": {
+                  "type": "string"
+                },
+                "today_row": {
+                  "type": "string"
+                },
+                "next_days": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 7,
+                  "maxItems": 7
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "today",
+                "day_words",
+                "kind",
+                "wanted",
+                "today_row",
+                "next_days",
+                "date"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_date"
+        ]
+      }
+    },
+    {
+      "id": "start",
+      "title": "What time does it start?",
+      "kind": "model",
+      "in": "r_date",
+      "out": "r_start",
+      "merge": "r_date",
+      "uses": [
+        "thesis/settings",
+        "thesis/existing-events"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": true,
+      "needs": {
+        "start": "required_unless_all_day"
+      },
+      "shows": [
+        "time_words",
+        "time_kind",
+        "event_row",
+        "start",
+        "allDay",
+        "ask"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_date}\n\nWhen does the event start? Fill the boxes in order.\n- time_words: copy the request's words that say the time, e.g. \"at half 3\", \"from 10 to 11\", \"in the afternoon\", \"after my swim\", \"all day\", \"keep the whole morning free\". Not the day. None: \"\".\n- time_kind: from time_words, the first that fits:\n  \"two times\" (two different times are said: \"all day\" and a single clock time (\"all day, at 4\"), \"at noon\" and \"from 2 to 5\", \"after lunch\" and \"for the morning\"; one range like \"from 10 to 11\" is one time; \"all day\" with a range (\"between 6 and 9 pm all day\") is \"clock\", the range wins),\n  \"all day\" (all day, the whole day),\n  \"half day\" (for the morning, keep the whole morning free, the rest of the afternoon),\n  \"clock\" (a number or noon: at 4, 3 pm, 08:30, half 10, noon, from 10 to 11, between 6 and 7),\n  \"soft\" (early, in the morning, late morning, lunchtime, after lunch, in the afternoon, in the evening, after dinner),\n  \"after event\" only if time_words has the words \"after my\" or \"after the\" (\"after my standup\", \"after the review\"),\n  \"none\".\n- event_row: only for after event: copy the row of the existing events table whose title is that event and whose date is this row's date, e.g. \"Swim,2026-03-12,18:00,19:00,Sport\". Other kinds: \"\".\n- start:\n  two times: null.\n  all day: null.\n  half day: morning 08:00, afternoon 12:00, evening 18:00. \"the rest of the <part>\": the time now, copied from the \"Today is\" line.\n  after event: the end time in event_row, the time just before the calendar name. \"Swim,2026-03-12,18:00,19:00,Sport\" gives 19:00.\n  clock: the first time in time_words, as 24-hour HH:MM. \"3 pm\" 15:00, \"12:30 pm\" 12:30, \"9 am\" 09:00, \"08:30\" 08:30, \"half 10\" 10:30, \"noon\" 12:00. Without am or pm: an hour 1 to 7 is pm; 8 to 12 stays as it is.\n  pm hours: 1 is 13, 2 is 14, 3 is 15, 4 is 16, 5 is 17, 6 is 18, 7 is 19 (\"half 5\" 17:30).\n  soft: early 08:00, but 11:30 if what is a lunch; in the morning 09:00, late morning 11:00, lunchtime 12:00, after lunch 13:30, in the afternoon 14:00, in the evening 19:00, after dinner 20:00.\n  none: null.\n- allDay: true only for all day.\n- ask: two times: one short question naming both, e.g. \"All day, or from 18:00?\". Else \"\".\nTimes are only hours and minutes, like \"13:30\", never with the date.\n\nFor every row give back only \"row\" and \"time_words\", \"time_kind\", \"event_row\", \"start\", \"allDay\", \"ask\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_start\": [{\"row\": 1, \"time_words\": ..., \"time_kind\": ..., \"event_row\": ..., \"start\": ..., \"allDay\": ..., \"ask\": ...}]}. The top-level key must be exactly \"r_start\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "date"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_start": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "time_words": {
+                  "type": "string"
+                },
+                "time_kind": {
+                  "type": "string",
+                  "enum": [
+                    "two times",
+                    "all day",
+                    "half day",
+                    "after event",
+                    "clock",
+                    "soft",
+                    "none"
+                  ]
+                },
+                "event_row": {
+                  "type": "string"
+                },
+                "start": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "allDay": {
+                  "type": "boolean"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "time_words",
+                "time_kind",
+                "event_row",
+                "start",
+                "allDay",
+                "ask"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_start"
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "title": "When does it end?",
+      "kind": "model",
+      "in": "r_start",
+      "out": "r_end",
+      "merge": "r_start",
+      "uses": [
+        "thesis/durations"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {
+        "end": "required_unless_all_day"
+      },
+      "shows": [
+        "from",
+        "end_words",
+        "end_kind",
+        "minutes",
+        "add",
+        "end",
+        "end_date"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_start}\n\nWhen does the event end? This row's start is already decided. Fill the boxes in order.\n- from: copy this row's start (null if allDay is true).\n- end_words: copy the request's words that say the end or the length, e.g. \"until 6 pm\", \"from 10 to 11\", \"for 50 minutes\", \"an hour and a half\", \"quick\", \"for the morning\". None: \"\".\n- end_kind: the first that fits:\n  \"end said\" (end_words has the word until, till or to, or \"between ... and ...\"),\n  \"all day\" (allDay is true in this row),\n  \"half day\" (for the morning, keep the whole morning free, the rest of the afternoon),\n  \"quick\" (end_words is \"quick\"),\n  \"length\" (a length is said: for 1 hour, an hour and a half, for 45 minutes),\n  \"usual\" (nothing said).\n- minutes: quick: 15. length: from end_words (1 hour 60, an hour and a half 90, 45 minutes 45). usual: the number for this row's what in the durations table, else 30. all day, end said, half day: 0.\n- add: for quick, length and usual, minutes as hours:minutes (15 = 0:15, 45 = 0:45, 60 = 1:00, 90 = 1:30, 120 = 2:00). Else \"\".\n- end:\n  end said: the end time in end_words, as 24-hour HH:MM (without am or pm, an hour 1 to 7 is pm: \"until 6\" 18:00, \"to 11\" 11:00). An end that would be before from is pm: from 20:00, \"until 11\" is 23:00.\n  half day: morning 12:00, afternoon 18:00, evening 22:00.\n  quick, length and usual: from + add. Add the hours to from's hour, then the minutes to from's minutes; if the minutes reach 60 or more, take 60 off and add 1 to the hour.\n  Examples (made up): from 16:40, add 0:50: hour 16 + 0 = 16, minutes 40 + 50 = 90, 90 - 60 = 30 so hour 17: end 17:30. from 09:10, add 0:15: hour 9 + 0 = 9, minutes 10 + 15 = 25, under 60 so the hour stays: end 09:25.\n  All day: null.\n- end_date: this row's date (the next day only if the end passes midnight).\nTimes are only hours and minutes, like \"13:30\", never with the date.\n\nFor every row give back only \"row\" and \"from\", \"end_words\", \"end_kind\", \"minutes\", \"add\", \"end\", \"end_date\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_end\": [{\"row\": 1, \"from\": ..., \"end_words\": ..., \"end_kind\": ..., \"minutes\": ..., \"add\": ..., \"end\": ..., \"end_date\": ...}]}. The top-level key must be exactly \"r_end\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "date",
+        "start",
+        "allDay"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_end": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "from": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "end_words": {
+                  "type": "string"
+                },
+                "end_kind": {
+                  "type": "string",
+                  "enum": [
+                    "all day",
+                    "end said",
+                    "half day",
+                    "quick",
+                    "length",
+                    "usual"
+                  ]
+                },
+                "minutes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "add": {
+                  "type": "string"
+                },
+                "end": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "end_date": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "from",
+                "end_words",
+                "end_kind",
+                "minutes",
+                "add",
+                "end",
+                "end_date"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_end"
+        ]
+      }
+    },
+    {
+      "id": "repeat",
+      "title": "How often?",
+      "kind": "model",
+      "in": "r_end",
+      "out": "r_repeat",
+      "merge": "r_end",
+      "uses": [],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "repeat_words",
+        "until_words",
+        "until_date",
+        "repeat_kind",
+        "freq",
+        "until_part",
+        "rrule"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_end}\n\nDoes the event repeat? Most events happen once. Fill the boxes in order.\n- repeat_words: copy the request's repeat words (every, each, daily, weekly, monthly, yearly, fortnightly, \"for N weeks\", \"Monday to Friday\"), e.g. \"every Tuesday\". None: \"no\".\n- until_words: copy what comes after \"until\" when it ends the repeat, e.g. \"until Christmas\" gives \"Christmas\". \"until 11\" or \"until 5 pm\" is the end time of the event, not of the repeat: \"no\". None: \"no\".\n- until_date: the date of until_words as YYYYMMDD. Christmas is 20261225. The end of the year is 20261231. until_words \"no\": \"no\".\n- repeat_kind: from repeat_words, the first that fits: \"none\" (repeat_words \"no\"), \"daily\" (every day, every morning, daily), \"weekdays\" (every weekday, Monday to Friday), \"every other week\" (every other <weekday>, fortnightly), \"weekly\" (every <weekday>, weekly, every week), \"monthly date\" (every month, every month on that date), \"monthly weekday\" (on the same weekday every month), \"yearly\" (every year), \"count\" (for N weeks).\n- freq: none: \"\". daily: FREQ=DAILY. weekdays: FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR. every other week: FREQ=WEEKLY;INTERVAL=2;BYDAY= followed by the weekday's two letters. weekly: FREQ=WEEKLY;BYDAY= followed by the weekday's two letters (every Saturday: FREQ=WEEKLY;BYDAY=SA). monthly date: FREQ=MONTHLY;BYMONTHDAY=<day of this row's date>. monthly weekday: FREQ=MONTHLY;BYDAY=<which one in the month><two letters> (the 4th Thursday is 4TH, the last Monday -1MO). yearly: FREQ=YEARLY. count: FREQ=WEEKLY;COUNT=<N>.\n  Two letters: MO TU WE TH FR SA SU.\n- until_part: if until_date is \"no\": \"\". Otherwise \";UNTIL=\" and until_date.\n- rrule: freq + until_part, exactly joined (freq \"\" and until_part \"\" give \"\").\nExamples (made up): \"every Wednesday until Easter\": repeat_words \"every Wednesday\", until_words \"Easter\", until_date <Easter>, repeat_kind \"weekly\", freq \"FREQ=WEEKLY;BYDAY=WE\", until_part \";UNTIL=<Easter>\", rrule \"FREQ=WEEKLY;BYDAY=WE;UNTIL=<Easter>\". \"piano lesson on Friday\": repeat_words \"no\", until_words \"no\", until_date \"no\", repeat_kind \"none\", freq \"\", until_part \"\", rrule \"\".\n\nFor every row give back only \"row\" and \"repeat_words\", \"until_words\", \"until_date\", \"repeat_kind\", \"freq\", \"until_part\", \"rrule\", nothing else; the other fields are kept for you.\n\nAnswer as JSON {\"r_repeat\": [{\"row\": 1, \"repeat_words\": ..., \"until_words\": ..., \"until_date\": ..., \"repeat_kind\": ..., \"freq\": ..., \"until_part\": ..., \"rrule\": ...}]}. The top-level key must be exactly \"r_repeat\".",
+      "may_be_empty": true,
+      "view": [
+        "date"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_repeat": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "repeat_words": {
+                  "type": "string"
+                },
+                "until_words": {
+                  "type": "string"
+                },
+                "until_date": {
+                  "type": "string"
+                },
+                "repeat_kind": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "daily",
+                    "weekdays",
+                    "every other week",
+                    "weekly",
+                    "monthly date",
+                    "monthly weekday",
+                    "yearly",
+                    "count"
+                  ]
+                },
+                "freq": {
+                  "type": "string"
+                },
+                "until_part": {
+                  "type": "string"
+                },
+                "rrule": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "repeat_words",
+                "until_words",
+                "until_date",
+                "repeat_kind",
+                "freq",
+                "until_part",
+                "rrule"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_repeat"
+        ]
+      }
+    },
+    {
+      "id": "place",
+      "title": "Where?",
+      "kind": "model",
+      "in": "r_repeat",
+      "out": "r_place",
+      "merge": "r_repeat",
+      "uses": [
+        "thesis/places"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "place_words",
+        "table_row",
+        "place_kind",
+        "location"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_repeat}\n\nWhere is the event? Fill the boxes in order. Use only the first sentence of the request.\n- place_words: copy the words after \"at\", \"in\", \"from\", \"on\" or \"here\" that name where the event is (a place, a room, a street, a city, a link, Teams), with that first word. Not a time (\"at 5\", \"in the afternoon\"). None: \"no\".\n- table_row: the row of the places table whose place or one of its also_written_as spellings is in the first sentence of the request, copied whole. No match: \"\".\n- place_kind: the first that fits: \"table\" (table_row is not \"\": always table, never address), \"link\" (place_words has http), \"teams\" (on Teams), \"from to\" (from A to B), \"address\" (a street address or a room), \"city\" (a city), \"none\" (place_words \"no\").\n- location:\n  table: the text before the first comma of table_row (\"<name>,<other spellings>,\" gives \"<name>\").\n  link: the link, copied exactly.\n  teams: Microsoft Teams.\n  from to: \"A -> B\" (\"from <city one> to <city two>\" gives \"<city one> -> <city two>\").\n  address: as said, without at or in (\"<number> <street>\", \"room <number>\").\n  city: the city.\n  none: \"\".\n\nFor every row give back only \"row\" and \"place_words\", \"table_row\", \"place_kind\", \"location\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_place\": [{\"row\": 1, \"place_words\": ..., \"table_row\": ..., \"place_kind\": ..., \"location\": ...}]}. The top-level key must be exactly \"r_place\".",
+      "may_be_empty": true,
+      "view": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_place": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "place_words": {
+                  "type": "string"
+                },
+                "table_row": {
+                  "type": "string"
+                },
+                "place_kind": {
+                  "type": "string",
+                  "enum": [
+                    "table",
+                    "link",
+                    "teams",
+                    "from to",
+                    "address",
+                    "city",
+                    "none"
+                  ]
+                },
+                "location": {
+                  "type": "string"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "place_words",
+                "table_row",
+                "place_kind",
+                "location"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_place"
+        ]
+      }
+    },
+    {
+      "id": "calendar",
+      "title": "Which calendar?",
+      "kind": "model",
+      "in": "r_place",
+      "out": "r_calendar",
+      "merge": "r_place",
+      "uses": [
+        "thesis/calendars",
+        "thesis/people"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {
+        "calendar": "required"
+      },
+      "shows": [
+        "calendar"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_place}\n\nWhich calendar? Check in this order and stop at the first that fits:\n1. A trip whose point is the journey (train, flight, drive, commute from A to B): Travelling Buffer.\n2. With Martin or for the client: Work.\n3. Sport or exercise (run, marathon, bike ride, climbing, training, skating, yoga, gym) with friends (Sam, Natalie, Arthur, Jordan as a friend): Friends.\n4. An activity keyword from the calendars table in the event's name (gym, physio, dentist, lecture, thesis, study, therapy...): that calendar. Physio, therapy, braces and the dentist are Me Time, also with Mum or after a standup: Alex wears braces, so a braces check is a personal health appointment, never work.\n5. The calendar of the people named (people table).\n6. At a family member's home (Mum's): Family.\n7. Otherwise: IU.\nExamples (made up): \"tennis with a friend\" -> Friends. \"swimming alone\" -> Self-Improvement. \"dinner with the boss and a friend\" -> Work.\n\nFor every row give back only \"row\" and \"calendar\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_calendar\": [{\"row\": 1, \"calendar\": ...}]}. The top-level key must be exactly \"r_calendar\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "people"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_calendar": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "calendar": {
+                  "type": "string",
+                  "enum": [
+                    "Travelling Buffer",
+                    "Me Time",
+                    "Love",
+                    "Friends",
+                    "AirBNB",
+                    "Self-Improvement",
+                    "IU",
+                    "Family",
+                    "Work",
+                    "UK",
+                    "VoAI"
+                  ]
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "calendar"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_calendar"
+        ]
+      }
+    },
+    {
+      "id": "company",
+      "title": "For which company?",
+      "kind": "model",
+      "in": "r_calendar",
+      "out": "r_company",
+      "merge": "r_calendar",
+      "uses": [],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "client_word",
+        "calendar_copy",
+        "company"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_calendar}\n\nWhich company is the event for? Fill the boxes in order.\n- client_word: copy the word \"client\" or \"Fabrikam\" if the request has it (also misspelt, like \"clinet\"). Else \"no\".\n- calendar_copy: copy this row's calendar exactly.\n- company: the first that fits, then stop: client_word is \"client\" or \"Fabrikam\": \"FAB\" (also on Work). Else calendar_copy is \"Work\": \"NW\". Else: \"none\".\n\nFor every row give back only \"row\" and \"client_word\", \"calendar_copy\", \"company\", nothing else; the other fields are kept for you.\n\nAnswer as JSON {\"r_company\": [{\"row\": 1, \"client_word\": ..., \"calendar_copy\": ..., \"company\": ...}]}. The top-level key must be exactly \"r_company\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "people",
+        "calendar"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_company": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "client_word": {
+                  "type": "string"
+                },
+                "calendar_copy": {
+                  "type": "string"
+                },
+                "company": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "FAB",
+                    "NW"
+                  ]
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "client_word",
+                "calendar_copy",
+                "company"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_company"
+        ]
+      }
+    },
+    {
+      "id": "title",
+      "title": "What is it called?",
+      "kind": "model",
+      "in": "r_company",
+      "out": "r_title",
+      "merge": "r_company",
+      "uses": [],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {
+        "title": "required"
+      },
+      "shows": [
+        "maybe_part",
+        "company_copy",
+        "company_part",
+        "name_part",
+        "people_part",
+        "title"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_company}\n\nBuild the title from this row's what, people, company and maybe. Fill the parts in order, then join them:\n- maybe_part: maybe true gives \"MAYBE \", maybe false gives \"\".\n- company_copy: copy this row's company exactly (\"none\", \"FAB\" or \"NW\").\n- company_part: company_copy \"none\" gives \"\". \"FAB\" gives \"(FAB) \". \"NW\" gives \"(NW) \". Nothing else ever goes in brackets.\n- name_part: what with a capital first letter.\n- people_part: people [] gives \"\". Else \" with \" and the people joined by \" and \".\n- title: maybe_part + company_part + name_part + people_part, exactly joined, nothing added.\nExamples (made up): maybe false, company \"none\", what \"piano lesson\", people []: title \"Piano lesson\". maybe false, company \"XY\", what \"planning\", people [\"Tom\"]: title \"(XY) Planning with Tom\".\n\nFor every row give back only \"row\" and \"maybe_part\", \"company_copy\", \"company_part\", \"name_part\", \"people_part\", \"title\", nothing else; the other fields are kept for you.\n\nAnswer as JSON {\"r_title\": [{\"row\": 1, \"maybe_part\": ..., \"company_copy\": ..., \"company_part\": ..., \"name_part\": ..., \"people_part\": ..., \"title\": ...}]}. The top-level key must be exactly \"r_title\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "people",
+        "company",
+        "maybe"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_title": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "maybe_part": {
+                  "type": "string"
+                },
+                "company_copy": {
+                  "type": "string"
+                },
+                "company_part": {
+                  "type": "string"
+                },
+                "name_part": {
+                  "type": "string"
+                },
+                "people_part": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "maybe_part",
+                "company_copy",
+                "company_part",
+                "name_part",
+                "people_part",
+                "title"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_title"
+        ]
+      }
+    },
+    {
+      "id": "invite",
+      "title": "Who gets an invitation?",
+      "kind": "model",
+      "in": "r_title",
+      "out": "r_invite",
+      "merge": "r_title",
+      "uses": [
+        "thesis/invites",
+        "thesis/people"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "calendar_copy",
+        "is_work",
+        "row_people",
+        "on_list",
+        "invite_words",
+        "asked",
+        "attendees"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_title}\n\nWho gets an invitation? Fill the boxes in order. Look only at the people in this row.\n- calendar_copy: copy this row's calendar exactly.\n- is_work: true if calendar_copy is \"Work\", else false.\n- row_people: copy this row's people list exactly.\n- on_list: is_work false: []. is_work true: the names of row_people that are also in the invites table, written as there; a name not in row_people never. Nobody: [].\n- invite_words: copy the request's words that invite someone (\"invite Tom\", \"send Tom an invite\") or an email address in it. Most requests have none: \"no\".\n- asked: if invite_words is \"no\": []. Otherwise: the people named in invite_words.\n- attendees: one item for each name in on_list, plus one for each name or email in asked, each as {\"name\": name, \"email\": the email column (the one with @) of the invites table, else of the people table}. For an email in asked: the person with that email. on_list and asked both []: [].\n\nFor every row give back only \"row\" and \"calendar_copy\", \"is_work\", \"row_people\", \"on_list\", \"invite_words\", \"asked\", \"attendees\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"r_invite\": [{\"row\": 1, \"calendar_copy\": ..., \"is_work\": ..., \"row_people\": ..., \"on_list\": ..., \"invite_words\": ..., \"asked\": ..., \"attendees\": ...}]}. The top-level key must be exactly \"r_invite\".",
+      "may_be_empty": true,
+      "view": [
+        "people",
+        "calendar"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_invite": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "calendar_copy": {
+                  "type": "string"
+                },
+                "is_work": {
+                  "type": "boolean"
+                },
+                "row_people": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "on_list": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "invite_words": {
+                  "type": "string"
+                },
+                "asked": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "attendees": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "email"
+                    ]
+                  }
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "calendar_copy",
+                "is_work",
+                "row_people",
+                "on_list",
+                "invite_words",
+                "asked",
+                "attendees"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_invite"
+        ]
+      }
+    },
+    {
+      "id": "notes",
+      "title": "Anything for the notes?",
+      "kind": "model",
+      "in": "r_invite",
+      "out": "r_notes",
+      "merge": "r_invite",
+      "uses": [],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": false,
+      "needs": {},
+      "shows": [
+        "working",
+        "desc",
+        "reminder_minutes"
+      ],
+      "prompt": "These are calendar events with the notes the user dictated, each with a row number:\n{events}\n\nFor each event that has notes write:\nrow: its row number\ndesc: the information worth keeping from its notes as a short note in the third person. Keep links, numbers and codes exactly. Empty if nothing is worth keeping.\nreminder_minutes: only if the user literally asked to be reminded (\"remind me\"), how many minutes before (an hour is 60, a day is 1440, a week is 10080), else 0. Do not put the reminder into desc.\n\nAnswer as JSON {\"notes\": [ ... ]}",
+      "may_be_empty": true,
+      "view": [],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "r_notes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "working": {
+                  "type": "string"
+                },
+                "desc": {
+                  "type": "string"
+                },
+                "reminder_minutes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "working",
+                "desc",
+                "reminder_minutes"
+              ]
+            }
+          }
+        },
+        "required": [
+          "r_notes"
+        ]
+      }
+    },
+    {
+      "id": "check",
+      "title": "Anything to ask?",
+      "kind": "model",
+      "in": "r_notes",
+      "out": "result",
+      "merge": "r_notes",
+      "uses": [
+        "thesis/existing-events"
+      ],
+      "reads": [
+        "input",
+        "today"
+      ],
+      "asks": true,
+      "needs": {},
+      "shows": [
+        "date_copy",
+        "same_day",
+        "this_slots",
+        "other_slots",
+        "shared",
+        "clash_with",
+        "confirm_first",
+        "need_ask",
+        "ask"
+      ],
+      "prompt": "Today is {today}.\nRequest: {input}\n\nThe events so far, one row each:\n{r_notes}\n\nDoes the event clash with an existing event? Fill the boxes in order.\n- date_copy: copy this row's date exactly.\n- same_day: the rows of the existing events table (title,date,start,end,calendar) whose date is exactly date_copy, each row copied whole as one item. This event itself is not in that table. Rows with any other date never. None: [].\n- this_slots: the quarter hours this event covers, from its start up to its end, not the end itself: start 14:40, end 15:10 gives [\"14:30\", \"14:45\", \"15:00\"] (a quarter hour counts if the event is on during it). All day or no start: [].\n- other_slots: for each same_day row, \"<title>: \" and the quarter hours it covers the same way. None: [].\n- shared: the quarter hours that are in this_slots and also in one of other_slots, with that title: \"Swim 14:45\". None: [].\n- clash_with: shared not empty: the title in shared. Else \"\". An event that starts exactly when the other one ends (\"after my <event>\") is not a clash.\n- confirm_first: true if the request says to check with Alex first, else false.\n- need_ask: true if clash_with is not \"\" or confirm_first is true. Else false.\n- ask: need_ask true: one short question, e.g. \"This clashes with <clash_with>. Book it anyway?\". need_ask false: \"\".\n\nFor every row give back only \"row\" and \"date_copy\", \"same_day\", \"this_slots\", \"other_slots\", \"shared\", \"clash_with\", \"confirm_first\", \"need_ask\", \"ask\", nothing else; the other fields are kept for you.\n\nTables:\n{knowledge}\n\nAnswer as JSON {\"result\": [{\"row\": 1, \"date_copy\": ..., \"same_day\": ..., \"this_slots\": ..., \"other_slots\": ..., \"shared\": ..., \"clash_with\": ..., \"confirm_first\": ..., \"need_ask\": ..., \"ask\": ...}]}. The top-level key must be exactly \"result\".",
+      "may_be_empty": true,
+      "view": [
+        "what",
+        "date",
+        "start",
+        "end",
+        "allDay"
+      ],
+      "schema": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "date_copy": {
+                  "type": "string"
+                },
+                "same_day": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "this_slots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "other_slots": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shared": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "clash_with": {
+                  "type": "string"
+                },
+                "confirm_first": {
+                  "type": "boolean"
+                },
+                "need_ask": {
+                  "type": "boolean"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "drop": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "row",
+                "date_copy",
+                "same_day",
+                "this_slots",
+                "other_slots",
+                "shared",
+                "clash_with",
+                "confirm_first",
+                "need_ask",
+                "ask"
+              ]
+            }
+          }
+        },
+        "required": [
+          "result"
+        ]
+      }
+    },
+    {
+      "id": "ask",
+      "title": "Ask you",
+      "kind": "human",
+      "in": "asks",
+      "when": "asks",
+      "out": "answers",
+      "after": [
+        "check"
+      ],
+      "shows": [
+        "text"
+      ]
+    },
+    {
+      "id": "create",
+      "title": "Put it in",
+      "kind": "tool",
+      "connection": "google-calendar",
+      "tool": "create_event",
+      "in": "result",
+      "each": true,
+      "unless": "asks",
+      "prepare": "thesis_test_send",
+      "out": "created",
+      "role": "act",
+      "after": [
+        "check"
+      ],
+      "shows": [
+        "title",
+        "date",
+        "start",
+        "end"
+      ]
+    }
+  ]
+}
