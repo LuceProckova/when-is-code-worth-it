@@ -1,0 +1,101 @@
+﻿id,ask,clash,title,date,start,end,all_day,location,attendees,calendar,rrule,reminder_minutes,description,notes_for_luce
+1,,,(NW) Meeting with Jordan,2026-11-10,10:00,11:00,FALSE,Café Lumen,jordan.work@example.com,Work,FREQ=WEEKLY;BYDAY=TU;UNTIL=20261225,,"He wrote ""Lumen works for me, the office is too loud"".","meeting = Work keyword, so Jordan (work); no company word, so no prefix; Jordan (work) works for Northwind (persona rule 17)"
+2,,,Quiz night with Jordan,2026-11-12,20:00,23:00,FALSE,The Cellar Bar,,Friends,FREQ=WEEKLY;BYDAY=TH,,We always end up staying way too long anyway.,
+3,,,(NW) Team lunch,2026-11-03,12:00,13:00,FALSE,Café Lumen,team@example.com,Work,,,The café's number is +44 20 7946 0123.,"'the planning one' left out (shortest reading), 'Team planning lunch' also possible"
+4,,Standup (09:00 to 09:30),(NW) Standup with Martin,2026-11-16,09:15,09:30,FALSE,Vienna,martin@example.com,Work,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,The dial-in is +44 20 7946 0123.,"4.11.26: clashes with the existing Standup 09:00 to 09:30, clashes are always asked (3.11.26)."
+5,,,Yoga class,2026-12-05,08:30,09:20,FALSE,https://example.com/meet/123,,Self-Improvement,FREQ=WEEKLY;INTERVAL=2;BYDAY=SA,,"Plan: warm up, balance, stretching.",
+6,,,(NW) Drinks with Martin and Sam,2026-12-31,18:00,19:30,FALSE,room 3.12,martin@example.com,Work,,,"Plan: toast, snacks, playlist.",
+7,,,MAYBE (NW) Drinks with Martin and Natalie,2026-11-20,18:00,21:00,FALSE,The Cellar Bar,martin@example.com,Work,,,"Plan: catch up, the trip, Christmas.","2.11.26: ""between 6 and 9 pm all day"" is not a clear contradiction, ""all day"" reads as the slip; 18:00 to 21:00, no question. 4.11.26: title, date, place, attendees, calendar, desc were blank, filled from the request and tables."
+8,,,Coffee with Sam,2026-11-13,12:00,12:15,FALSE,Café Lumen,sam@example.com,Friends,,,"It's mostly just to catch up, nothing serious.",
+9,"Physio programme review: after your dentist (17 Nov, 11:00), or all day?",,,,,,,,,,,,,
+10,,,Brunch with Jordan,2026-11-15,12:00,13:30,FALSE,14 High Street,,Friends,FREQ=MONTHLY;BYMONTHDAY=15,,It's at the new flat so I should bring something.,
+11,,,Lunch with Sam,2026-11-07,12:00,13:30,FALSE,Mum's,,Friends,FREQ=WEEKLY;BYDAY=SA,,Mum always cooks way too much so don't put anything right after.,start swapped with 88 on 1.11.26: lunch at noon
+12,"Client yearly report: after your standup (4 Dec, 09:30), or all day?",,,,,,,,,,,,,
+13,,,Kitchen painting with Jordan,2026-12-02,10:30,11:00,FALSE,Mum's,,Friends,,,"To do: tape the edges, first coat, second coat.",
+14,,,(NW) Virtual coffee with Martin and Sam,2026-12-01,15:00,16:00,FALSE,Microsoft Teams,martin@example.com;sam@example.com,Work,FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,,,martian read as Martin (table lists it only in 'check-in with martian')
+15,,,Start the online strength training with Jordan,2026-11-09,13:30,14:30,FALSE,https://example.com/meet/123,,Friends,FREQ=WEEKLY;BYDAY=MO,,The plan is here https://example.com/doc/42.,"'finally' dropped as filler, 'start the' kept (words as said); Jordan (friend) for sport = Friends (rule 6 changed 1.11.26)"
+16,,,Train to Nat's,2026-12-05,12:00,13:00,FALSE,Vienna -> Bratislava,,Travelling Buffer,FREQ=WEEKLY;BYDAY=SA;UNTIL=20261225,,Buy the ticket online.,"Nat's kept as said, not read as Natalie"
+17,,,Do the back exercises the physio gave me with Mum,2026-12-07,08:30,09:00,FALSE,https://example.com/meet/123,,Me Time,FREQ=DAILY,,She has the same back problem so we might as well do it together.,"'finally' dropped, rest kept as said incl. 'the physio gave me'; 30 min, physio read as who gave them, not the activity (45 if counted)"
+18,,,MAYBE Half marathon with Sam,2026-11-15,,,TRUE,8 Station Road,sam@example.com,Friends,FREQ=YEARLY,,Bring running shoes.,sport with friends = Friends (persona rule 6 changed 1.11.26)
+19,,,Trip with Sam and Arthur,2026-11-21,09:00,10:30,FALSE,Vienna -> Bratislava,,Travelling Buffer,,,,"'Trip' as the shortest event word, 'Train' also possible"
+20,,,Physio stretching with Mum,2026-11-16,09:30,10:15,FALSE,Microsoft Teams,,Me Time,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,She needs the link.,
+21,,,(FAB) Client workshop,2026-12-31,16:30,18:00,FALSE,room 3.12,client@example.com,Work,,,The slides are here https://example.com/doc/42.,Klein read as client (slip not in speech-fixes); the Fabrikam people = the client
+22,,,MAYBE Family day with Mum,2027-01-03,,,TRUE,Mum's,,Family,FREQ=YEARLY,,Photos from last year are here https://example.com/doc/42.,
+23,"Thesis library trip: at half 8, or from 9 to 11?",,,,,,,,,,,,,
+24,,,(FAB) Get the report finished before the deadline with the client,2026-11-16,09:30,10:00,FALSE,room 3.12,client@example.com,Work,FREQ=DAILY,,"They keep changing the numbers, which is why it has to be every day.","'please create finally' dropped, rest kept as said incl. 'before the deadline'; ', ugh' dropped from description as filler"
+25,,,Physio appointment,2026-12-28,14:00,15:30,FALSE,,,Me Time,,,The surgery's number is +44 20 7946 0123.,
+26,,,MAYBE (FAB) Lunch with the client,2026-11-06,12:00,14:00,FALSE,Café Lumen,client@example.com,Work,,,"Bring: business cards, the contract, a pen.",
+27,,,(NW) Team lunch (internship),2026-11-09,11:30,12:15,FALSE,Riverside Mall,team@example.com,Work,,,"Agenda: welcome the new intern, Christmas party, budget.","'(internship)' kept, words as said"
+28,,,Bike ride with Sam and Arthur,2026-11-11,08:45,10:15,FALSE,Vienna -> Bratislava,,Friends,,1440,,sport with friends = Friends (persona rule 6 changed 1.11.26)
+29,"Doctor appointment: the morning (08:00 to 12:00), or from 13:30?",,,,,,,,,,,,,
+30,,,(NW) Christmas party with the team and Martin,2026-12-01,18:00,19:00,FALSE,The Cellar Bar,team@example.com;martin@example.com,Work,FREQ=YEARLY,,Code for the private room is 1234.,
+31,"Train to Brno: between 10 and 12, or 7:30 to 9:00?",,,,,,,,,,,,,
+32,,,(FAB) Have that long breakfast with the client and Martin,2026-11-03,08:00,12:00,FALSE,Vienna,client@example.com;martin@example.com,Work,,,Door code for their building is 1234.,"'finally' dropped, 'have that long' kept (words as said)"
+33,,,(FAB) Report deadline check with the client,2026-11-20,16:30,16:45,FALSE,27 Church Road,client@example.com,Work,FREQ=MONTHLY;BYMONTHDAY=20,,Bring the printed report.,
+34,,,(NW) Christmas lunch and market with the team and Martin,2026-12-04,,,TRUE,Café Lumen,team@example.com;martin@example.com,Work,,,,all day read as no clash with Standup 09:00 to 09:30 (no times to overlap)
+35,,,Get my back checked properly with Dana,2026-11-26,16:00,18:00,FALSE,room 4,,Me Time,FREQ=MONTHLY;BYDAY=4TH,,"She wrote ""come in comfy clothes, we'll do the full assessment"".","'finally' dropped, 'properly' kept (words as said)"
+36,,,(NW) Team check-in,2026-11-05,09:00,10:00,FALSE,14 High Street,team@example.com,Work,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,"Bring: laptop, notes, coffee.",
+37,,,(NW) Deadline review with Martin,2026-11-13,14:00,15:30,FALSE,Vienna,martin@example.com,Work,,,Door code at the office is 1234.,
+38,,,Coffee with Sam and Arthur,2026-11-12,17:30,19:00,FALSE,https://example.com/meet/123,,Friends,,,"Sam wrote ""let's do a video one, I'm stuck at home"".",
+39,"Virtual drinks: all day, or from 20:00?",,,,,,,,,,,,,
+40,,,Marathon training with Natalie and Sam,2026-11-14,08:00,12:00,FALSE,,,Friends,FREQ=WEEKLY;BYDAY=SA,,,sport with friends = Friends (persona rule 6 changed 1.11.26)
+41,"Report deadline: in the morning, or from 14:00?",,,,,,,,,,,,,
+42,"Thesis runs: after lunch, or from 09:00 to 15:00?",,,,,,,,,,,,,
+43,,,Train to my dentist appointment with Mum,2026-12-07,08:00,12:00,FALSE,Bratislava -> Vienna,,Me Time,,1440,,"'my' kept, not a filler"
+44,,,(FAB) Do the end of year review with the client and Martin,2026-12-31,16:30,17:30,FALSE,Microsoft Teams,client@example.com;martin@example.com,Work,FREQ=YEARLY,,"It's the big one so it'll run over, it always does.","'finally' dropped, 'do the' kept (words as said)"
+45,"Trip with Martin: the morning (08:00 to 12:00), or at 14:00?",,,,,,,,,,,,,
+46,,,(NW) Christmas lunch with Sam and Martin,2026-12-18,12:00,12:45,FALSE,8 Station Road,martin@example.com,Work,,,"Bring: the menu ideas, a card, cake.",
+47,,,Revision with Natalie and Arthur,2026-12-31,17:00,19:00,FALSE,room B204,,IU,FREQ=DAILY,,"Natalie wrote ""the exam is going to be brutal, let's do this every day"".",
+48,,,(NW) Report deadline (internship) with Martin,2026-11-06,15:00,17:00,FALSE,14 High Street,martin@example.com,Work,FREQ=WEEKLY;COUNT=4,,"He wrote ""let's go through it together every Friday"".","'(internship)' kept, words as said"
+49,,,(NW) Brunch with Martin,2026-11-14,08:00,12:00,FALSE,Café Lumen,martin@example.com,Work,FREQ=MONTHLY;BYDAY=2SA,,,
+50,,,(NW) Check-in with Martin,2026-11-09,09:00,09:30,FALSE,Microsoft Teams,martin@example.com,Work,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,The doc is here https://example.com/doc/42.,
+51,,,Take Mum her lunch while she recovers,2026-12-07,12:30,13:15,FALSE,Mum's,,Family,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,"Bring: soup, bread, her tablets.","'finally' dropped, 'while she recovers' kept (words as said)"
+52,,,Thesis check-in with Natalie,2026-11-16,13:00,13:15,FALSE,Brno,natalie@example.com,IU,FREQ=WEEKLY;BYDAY=MO,,The library's number is +44 20 7946 0123.,
+53,,,Gym,2026-11-09,07:00,08:30,FALSE,,,Self-Improvement,FREQ=DAILY,,"Bring: towel, water, headphones.",
+54,,,Get back into climbing with Arthur,2026-11-13,12:30,12:45,FALSE,,,Friends,FREQ=WEEKLY;BYDAY=FR;UNTIL=20261231,,The climbing gym's number is +44 20 7946 0123.,"'finally' dropped, 'get back into' kept (words as said); sport with friends = Friends (persona rule 6 changed 1.11.26)"
+55,,,MAYBE Lunch with Sam,2026-11-13,12:00,12:45,FALSE,Riverside Mall,sam@example.com,Friends,,,Book a table.,
+56,,,(NW) Report work before deadline with Martin,2026-11-09,09:00,11:00,FALSE,Vienna,martin@example.com,Work,,,Door code for the Vienna office is 1234.,
+57,,,Christmas card project with Arthur,2026-11-07,11:45,13:15,FALSE,Mum's,,Friends,FREQ=WEEKLY;COUNT=4,,Door code is 1234.,
+58,"Report deadline: the morning (08:00 to 12:00), or from 16:00?",,,,,,,,,,,,,
+59,,,Movie night with Natalie,2026-11-20,20:00,23:00,FALSE,https://example.com/meet/123,,Friends,FREQ=MONTHLY;BYMONTHDAY=20,,"Have ready: popcorn, the link, a blanket.",
+60,,,Breakfast and packing for Mum's move with Mum,2026-11-06,08:00,08:30,FALSE,Mum's,,Family,,,Door code is 1234.,"no 'with Mum', Mum counted as in the words via Mum's"
+61,,,(FAB) Client workshop with the team,2026-11-18,,,TRUE,Vienna -> Bratislava,team@example.com,Work,FREQ=WEEKLY;BYDAY=WE;UNTIL=20261225,1440,,"client not invited, only in the event name"
+62,,Year end review (15:30 to 16:30),Go through the thesis results with fresh eyes with Natalie,2026-12-31,15:00,18:00,FALSE,Microsoft Teams,natalie@example.com,IU,,60,,"'finally' dropped, 'with fresh eyes' kept (words as said); the rest of the afternoon from now (15:00) to the end of the afternoon (18:00), 3.11.26: afternoon is 12:00 to 18:00"
+63,,,(FAB) Client check-in with Martin,2026-11-12,17:00,17:15,FALSE,14 High Street,martin@example.com,Work,,,The doc is here https://example.com/doc/42.,"Klein read as client (slip not in speech-fixes); client not invited, only in the event name"
+64,,,(FAB) Sync with the team and the client,2027-01-04,13:30,13:45,FALSE,,team@example.com;client@example.com,Work,,,"Check: scope, budget, timeline.",
+65,,,(FAB) Client training prep with Martin,2026-12-28,09:00,12:00,FALSE,Café Lumen,martin@example.com,Work,FREQ=WEEKLY;INTERVAL=2,,Door code for the back room is 1234.,
+66,,,Physio check with Dana,2026-11-30,16:00,17:00,FALSE,https://example.com/meet/123,,Me Time,FREQ=MONTHLY;BYDAY=-1MO,,Have the exercise sheet ready.,
+67,,,Lunch with Mum,2026-12-25,12:00,13:00,FALSE,https://example.com/meet/123,,Family,FREQ=WEEKLY;BYDAY=FR,,Her number is +44 20 7946 0123.,'the video one' left out
+68,,,Breakfast with Mum,2026-11-09,08:00,08:30,FALSE,Mum's,,Family,,,Door code is 1234.,
+69,,,Braces check,2026-11-06,09:00,09:15,FALSE,Vienna,,Me Time,FREQ=MONTHLY;BYMONTHDAY=6,,"List: tighten, cleaning, ask about the retainer.",
+70,,,Mum's photo album project with Mum,2026-12-31,17:30,18:30,FALSE,Mum's,,Family,,,Door code is 1234.,"Mum's is the possessive, Mum is named, so 'with Mum' (1.11.26)"
+71,"Gym: the morning (08:00 to 12:00), or from 15:00?",,,,,,,,,,,,,
+72,,,(NW) Train with Martin,2027-01-20,07:00,08:00,FALSE,Vienna -> Bratislava,martin@example.com,Travelling Buffer,,,"He wrote ""we can grab breakfast on the train"".",Trip rule comes first (persona rule 1): Travelling Buffer even with Martin
+73,,,(FAB) Lunch with the client,2026-11-08,09:45,10:30,FALSE,,client@example.com,Work,,,They're quite chill so it's half a friends thing really.,
+74,,,(NW) Team meeting,2026-12-07,08:00,09:00,FALSE,room 3.12,team@example.com,Work,,,The office number is +44 20 7946 0123.,
+75,,,Lecture,2026-11-05,13:00,16:00,FALSE,Microsoft Teams,,UK,FREQ=WEEKLY;COUNT=4,,,
+76,,,(NW) Coffee with Martin,2026-12-28,09:00,09:30,FALSE,Vienna,martin@example.com,Work,,,,
+77,,,(NW) Course prep with the team,2027-01-04,10:00,10:45,FALSE,Vienna,team@example.com,Work,FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,1440,,
+78,,,(FAB) Client call with Martin,2026-12-04,16:00,17:30,FALSE,Office,martin@example.com,Work,,,The doc is here https://example.com/doc/42.,
+79,,,Family walk with Mum,2026-11-14,13:30,15:00,FALSE,Mum's,mum@example.com,Family,FREQ=WEEKLY;INTERVAL=2;BYDAY=SA,,Her number is +44 20 7946 0123.,
+80,,,(FAB) Meeting about contract with the client,2026-11-11,12:30,12:45,FALSE,Café Lumen,client@example.com,Work,,,Door code for the back room is 1234.,
+81,,Year end review (15:30 to 16:30),Coffee with Natalie,2026-12-31,14:00,17:00,FALSE,Café Lumen,,Friends,,,,"natty read as Natalie (not in also_written_as, strict rule would ask 'Who is natty?') 2.11.26: no rule says an afternoon already begun needs a question; start 14:00."
+82,,,(FAB) Client meeting about contract with Martin,2026-11-09,14:00,17:00,FALSE,,martin@example.com,Work,,,The contract is here https://example.com/doc/42.,
+83,,,(NW) Deadline with the team,2026-12-10,11:00,12:30,FALSE,8 Station Road,team@example.com,Work,FREQ=MONTHLY;BYDAY=2TH,,Their number is +44 20 7946 0123.,"'Deadline' as the shortest event word, 'Report deadline' also possible; 'the client call' is the anchor event, not a person here"
+84,,,MAYBE Study group with Arthur,2026-11-07,08:00,08:15,FALSE,room B204,arthur@example.com,IU,FREQ=WEEKLY;BYDAY=SA;UNTIL=20261219,1440,,
+85,,,Therapy session,2026-12-28,16:00,17:00,FALSE,https://example.com/meet/123,,Me Time,FREQ=WEEKLY;COUNT=4;BYDAY=MO,,The practice number is +44 20 7946 0123.,
+86,"Workshop: all day, or from 11:00?",,,,,,,,,,,,,
+87,"Lecture: at noon, or from 14:00?",,,,,,,,,,,,,
+88,,,Ice skating with Sam and Arthur,2026-11-06,09:30,11:00,FALSE,Riverside Mall,,Friends,,,"Bring: gloves, thick socks, cash.",start swapped with 11 on 1.11.26: after breakfast = 09:30 (settings); sport with friends = Friends (persona rule 6 changed 1.11.26)
+89,,,(NW) Team day with Arthur and Martin,2026-11-06,,,TRUE,Office,martin@example.com,Work,,,"Plan: planning, lunch, games.",
+90,,,(NW) Sort out the Christmas party planning with the team and Martin,2026-11-16,10:30,11:00,FALSE,room 3.12,team@example.com;martin@example.com,Work,,,"Agenda: venue, food, music.","'finally' dropped, 'sort out the' kept (words as said)"
+91,,,MAYBE Exam revision with Sam,2026-11-05,13:30,15:30,FALSE,Microsoft Teams,sam@example.com,IU,FREQ=WEEKLY;COUNT=4;BYDAY=TH,,"Topics: SQL, testing, UML.",
+92,"Deadline prep: the morning (08:00 to 12:00), or from 20:00?",,,,,,,,,,,,,
+93,,,Commute with Natalie,2026-11-09,19:30,20:00,FALSE,Vienna -> Bratislava,natalie@example.com,Travelling Buffer,"FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",,The timetable is here https://example.com/doc/42.,
+94,,,(NW) Lunch with Martin,2026-11-16,12:30,14:00,FALSE,14 High Street,martin@example.com,Work,,,,
+95,,,Gym,2026-11-10,19:00,20:00,FALSE,FitHub Gym,,Self-Improvement,FREQ=DAILY;UNTIL=20261225,1440,,
+96,,,(NW) Drinks with Martin,2026-11-06,18:00,18:45,FALSE,room 3.12,martin@example.com,Work,,,Bring snacks.,
+97,,,Catch-up with Natalie,2027-01-02,11:00,11:15,FALSE,Microsoft Teams,natalie@example.com,Friends,,,The photos are here https://example.com/doc/42.,
+98,,,(FAB) Sync with the team and the client,2026-11-05,13:00,13:30,FALSE,Office,team@example.com;client@example.com,Work,FREQ=DAILY,,Just while the project is mad busy.,
+99,,,Lunch with Sam,2026-11-14,11:30,14:00,FALSE,Vienna,,Friends,,,Book the train.,
+100,,,Dinner with Mum,2026-11-25,17:30,19:00,FALSE,Mum's,,Family,,1440,,"Mum's home = with Mum, Family (persona rule 13) 2.11.26: ""dinner at Mum's"" is with Mum, title Dinner with Mum."

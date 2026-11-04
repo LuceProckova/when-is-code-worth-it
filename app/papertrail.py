@@ -19,6 +19,7 @@ import urllib.request
 
 OLLAMA = 'http://127.0.0.1:11434/api/generate'
 SMALL = 'qwen2.5:7b'
+OLLAMA_OPTIONS = {'temperature': 0, 'seed': 1}   # the thesis runner adds num_ctx so every version gets the same context
 SKIP = {'.git', 'node_modules', '__pycache__', '$RECYCLE.BIN', 'System Volume Information',
         '.venv', 'venv', 'build', '.history', 'Archive', '00-Archive'}
 
@@ -28,17 +29,18 @@ ROOT = None       # set per request from settings
 
 # ---------- models ----------
 
-def ask_small(prompt, model=SMALL):
+def ask_small(prompt, model=SMALL, fmt=None):
     """One call to a small model, temperature 0, JSON out. Returns (dict, tokens, ms).
+    fmt: a JSON schema the answer is held to while it is written (structured outputs), else plain JSON.
     A model added through an API goes to its OpenAI-style endpoint, anything else to Ollama."""
     api = api_model(model)
     if api:
         return ask_api(prompt, api)
-    body = json.dumps({'model': model, 'prompt': prompt, 'stream': False, 'format': 'json',
-                       'options': {'temperature': 0, 'seed': 1}}).encode('utf-8')
+    body = json.dumps({'model': model, 'prompt': prompt, 'stream': False, 'format': fmt or 'json',
+                       'options': OLLAMA_OPTIONS}).encode('utf-8')
     t0 = time.time()
     req = urllib.request.Request(OLLAMA, data=body, headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=600) as r:
         res = json.loads(r.read().decode('utf-8'))
     ms = int((time.time() - t0) * 1000)
     tokens = (res.get('prompt_eval_count') or 0) + (res.get('eval_count') or 0)
@@ -590,8 +592,15 @@ def run_steps(wf, text, dry=False, extra=None):
                 yield rec
                 continue
             if st['kind'] == 'model':
-                prompt = fill(st['prompt'], text, ctx, st.get('uses'))
-                out, tok, _ = ask_small(prompt)
+                view_ctx = ctx
+                if 'view' in st and isinstance(ctx.get(st.get('in')), list):
+                    # the step sees only the fields it needs from the rows so far, nothing it could grab by mistake.
+                    # "view": [] means the row number only (as in step_lab.py); it used to count as no view at all, so
+                    # people, maybe, date, place and notes saw every earlier field incl. the intake's guesses (2.11.26)
+                    view_ctx = dict(ctx, **{st['in']: [{k: r.get(k) for k in ['row'] + st['view'] if k in r} if isinstance(r, dict) else r
+                                                       for r in ctx[st['in']]]})
+                prompt = fill(st['prompt'], text, view_ctx, st.get('uses'))
+                out, tok, _ = ask_small(prompt, fmt=st.get('schema'))
                 val = out.get(st['out'])
                 rec.update(tokens=tok, model=SMALL)
                 if not usable(val, st.get('required')) and st.get('fallback') == 'claude':
@@ -605,6 +614,18 @@ def run_steps(wf, text, dry=False, extra=None):
                 fixes = []
                 if st.get('fields'):
                     val, fixes = ground(val, text, st['fields'])
+                if st.get('merge'):
+                    # the step answered only its own fields per row: plain plumbing puts them onto the earlier rows by row
+                    # number, so a model step can never damage a field it was not asked for
+                    val = join_rows(ctx.get(st['merge']), [val], keep_empty=True)
+                    # a row the model marked as not an event of its own (a reminder, a door code, a second part of the
+                    # same event) is removed: the model decided it, code only carries it out
+                    kept = [r for r in val if not (isinstance(r, dict) and (str(r.get('drop')).lower() == 'true' or r.get('own_event') == 'no'))]
+                    val = kept or val[:1]
+                    if len(val) < len(ctx.get(st['merge']) or []) or any(isinstance(r, dict) and r.get('row') != i + 1 for i, r in enumerate(val)):
+                        # rows left after a drop are numbered 1, 2, ... again: the next step answers "row 1" for the first
+                        # row it sees, and an old number (row 2) would let that answer land nowhere (2.11.26)
+                        val = [dict(r, row=i + 1) if isinstance(r, dict) else r for i, r in enumerate(val)]
                 if st.get('check'):
                     ctx.pop('_note', None)
                     val = CODE_STEPS[st['check']](val, ctx)
@@ -613,7 +634,7 @@ def run_steps(wf, text, dry=False, extra=None):
                 # any model step may ask: a row's "ask" goes to the one Ask step, the same as a code step's question
                 for r in (val if isinstance(val, list) else []):
                     q = str(r.get('ask') or '').strip() if isinstance(r, dict) else ''
-                    if q:
+                    if q and '?' in q:   # only a real question: "no" or "send Dennis an invite" in an ask box is not one (4.11.26)
                         if not isinstance(ctx.get('asks'), list):
                             ctx['asks'] = []
                         if q not in ctx['asks']:
@@ -687,8 +708,10 @@ def run_steps(wf, text, dry=False, extra=None):
             return
 
 
-def join_rows(rows, tables):
-    """The rows with each extra table's fields added by row id (a model step's table, e.g. picks or notes)."""
+def join_rows(rows, tables, keep_empty=False):
+    """The rows with each extra table's fields added by row id (a model step's table, e.g. picks or notes).
+    keep_empty: a step that answers its own fields (merge) means it when it says "" or [] ("no company", "nobody
+    invited"), so that answer replaces the old value; only an empty ask never wipes an earlier question (2.11.26)."""
     if not tables or not isinstance(rows, list):
         return rows
     out = [dict(r) for r in rows]
@@ -696,7 +719,7 @@ def join_rows(rows, tables):
         by = {str(x.get('row')): x for x in (t or []) if isinstance(x, dict)}
         for r in out:
             extra = by.get(str(r.get('row'))) or {}
-            r.update({k: v for k, v in extra.items() if k != 'row' and v not in (None, '', [])})
+            r.update({k: v for k, v in extra.items() if k != 'row' and (v not in (None, '', []) or (keep_empty and k != 'ask'))})
     return out
 
 

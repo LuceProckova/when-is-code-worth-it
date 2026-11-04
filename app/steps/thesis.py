@@ -14,6 +14,7 @@ The day slot from Intake is one of:
   {} or missing                                            no day said, so today
 """
 import csv
+import json
 import difflib
 import os
 import re
@@ -179,6 +180,7 @@ def words_day(words, now):
     """The day words exactly as said, read by code where the meaning is fixed ("next tuesday", "in 3 days",
     "25 november", "first monday of december"). None when the words are not one of those, then the model's slot is used."""
     w = re.sub(r'^(on|the|for)\s+', '', re.sub(r'\s+', ' ', str(words or '').strip().lower())).strip(' ,.')
+    w = re.sub(r'\s+(early|late|in the (morning|afternoon|evening)|morning|afternoon|evening|night|after .*|at .*)$', '', w).strip(' ,.')
     if not w:
         return None
     w = re.sub(r'\b(\d+)(st|nd|rd|th)\b', r'\1', w)
@@ -210,13 +212,36 @@ def words_day(words, now):
 
 
 
+STREET = r'(road|street|st|avenue|ave|lane|square|way|close|drive|place)\b'
+MONTH_RE = r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*'
+
+
+def no_dates(t):
+    """The text without dates, so "2026-11-16" or "until 19 December" never read as a time."""
+    t = re.sub(r'\b\d{4}-\d{2}-\d{2}\b', ' ', t)
+    t = re.sub(r'\b\d{1,2}(st|nd|rd|th)?\s+(of\s+)?' + MONTH_RE + r'\b', ' ', t)
+    return re.sub(r'\b' + MONTH_RE + r'\s+\d{1,2}(st|nd|rd|th)?\b', ' ', t)
+RANGE = r'(\d{1,2}(?::\d{2})?)\s*(am|pm)?\s*(?:and|to|till|until|-)\s*(\d{1,2}(?::\d{2})?)\s*(am|pm)?'
+
+
 def said_clock(text):
-    """A clock time said in words, read by code: "3 pm", "15:00", "half 3", "quarter to 1", "noon". Bare hours 1 to 7 are pm."""
-    t = (text or '').lower()
-    w = re.search(r'\bbetween (\d{1,2}(?::\d{2})?)\s*(am|pm)? and \d{1,2}(?::\d{2})?\s*(am|pm)?', t)
+    """A clock time said in words, read by code: "3 pm", "15:00", "half 3", "quarter to 1", "noon". Bare hours 1 to 7 are pm.
+    A range or window ("from 1 to 4 pm", "between 6 and 9 pm", "7:30 to 9:00") starts at its first time; a time after
+    until or till is an end, never the start; a house number ("27 Church Road") is not a time."""
+    t = no_dates((text or '').lower())
+    t = re.sub(r'\b\d{1,3}\s+[a-z]+\s+' + STREET, ' ', t)
+    w = re.search(r'\b(?:between|from)\s+' + RANGE, t) or re.search(r'\b' + RANGE.replace('(?:and|to|till|until|-)', '(?:to|-)'), t)
     if w:   # a window starts at its first time, with the am or pm of the window
-        ap = w.group(2) or w.group(3) or ('pm' if int(w.group(1).split(':')[0]) <= 7 else 'am')
-        t = w.group(1) + ' ' + ap
+        h, mi = (w.group(1) + ':00').split(':')[:2]
+        h, ap = int(h), w.group(2) or w.group(4) or ''
+        end_h = int(w.group(3).split(':')[0])
+        if ap == 'pm' and h < 12 and not (w.group(4) == 'pm' and not w.group(2) and h > end_h):
+            h += 12
+        elif not ap and 1 <= h <= 7:
+            h += 12
+        return '%02d:%s' % (h, mi) if h < 24 else None
+    else:
+        t = re.sub(r'\b(until|till)\s+\S+(\s*(am|pm))?', ' ', t)
     m = re.search(r'\b(noon|midday)\b', t)
     if m:
         return '12:00'
@@ -239,8 +264,8 @@ def said_clock(text):
 
 
 REPEAT_WORDS = [
-    (r'\bevery (week)?day\b|\bdaily\b|\bevery morning\b|\bevery evening\b', 'FREQ=DAILY'),
     (r'\bevery (weekday|working day)\b|\bmonday to friday\b|\bon weekdays\b', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'),
+    (r'\bevery day\b|\bdaily\b|\bevery morning\b|\bevery evening\b', 'FREQ=DAILY'),
     (r'\bevery (other|second) (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\bfortnightly\b|\bevery 2 weeks\b|\bevery two weeks\b', 'FREQ=WEEKLY;INTERVAL=2'),
     (r'\bsame weekday every month\b', 'MONTHLY_BYDAY'),
     (r'\bevery month\b|\bmonthly\b', 'FREQ=MONTHLY'),
@@ -312,79 +337,277 @@ def tidy(e):
     return e
 
 
+SOFT_STARTS = [   # soft start words read by code, each from the settings table (longest phrases first)
+    (r'\bafter breakfast\b', 'after_breakfast_start'), (r'\bafter lunch\b', 'after_lunch_start'),
+    (r'\bafter dinner\b', 'after_dinner_start'), (r'\blate morning\b', 'late_morning_start'), (r'\blunch ?time\b', 'lunchtime'),
+    (r'\bin the morning\b', 'morning_start'), (r'\bin the afternoon\b', 'afternoon_start'), (r'\bin the evening\b', 'evening_start'),
+    (r'\bearly\b', 'early_start'),
+]
+NOT_EVENT = r'^(remind(er)?|remind me|door code|code|note|notes|bring|to do|todo|agenda|plan|reminder for|send( an?)? invite|invite)\b'
+
+
+def soft_start(text, what=''):
+    """A soft start said in words ("after lunch", "early", "in the evening") as HH:MM from the settings table, else None.
+    "early" for a meal starts at the meal window (lunch_window), not at early_start."""
+    t = (text or '').lower()
+    for pat, key in SOFT_STARTS:
+        if re.search(pat, t):
+            if key == 'early_start' and re.search(r'\blunch\b', (what or '').lower()):
+                return setting('lunch_window', '11:30-14:30').split('-')[0]
+            v = hhmm(setting(key))
+            if v:
+                return v
+    return None
+
+
+def as_hhmm(v):
+    """The model's time in any shape it likes to give ({"hour": 9, "minute": 30}, {"value": "08:00"},
+    {"kind": "setting", "value": "lunchtime"}, "9:30") as HH:MM, else None."""
+    if isinstance(v, dict):
+        if 'hour' in v:
+            try:
+                return '%02d:%02d' % (int(v['hour']), int(v.get('minute') or 0))
+            except (TypeError, ValueError):
+                return None
+        if v.get('kind') == 'setting':
+            return hhmm(setting(str(v.get('value'))))
+        return next((hhmm(x) for x in v.values() if hhmm(x)), None)
+    return hhmm(v)
+
+
+LENGTH = re.compile(r'\b(?:for\s+)?(an hour and a half|one and a half hours|half an hour|half hour|quarter of an hour|an hour|one hour|a hour|'
+                    r'(\d+(?:[.,]\d+)?)\s*(hours?|hrs?|h|minutes?|mins?))\b', re.I)
+
+
+def said_minutes(text):
+    """A length said in the request ("for 2 hours", "an hour and a half", "for 45 minutes"), else None. "quick" is quick_minutes."""
+    t = re.sub(r'"[^"]*"', '', (text or '').lower())
+    t = re.sub(r'\b(every|in|for)\s+\d+\s+(weeks?|days?|months?)\b', ' ', t)
+    t = re.sub(r'\bremind(er)?\b[^.]*', ' ', t)   # "remind me an hour before" is the reminder, not the length (3.11.26)
+    m = LENGTH.search(t)
+    if m:
+        words = {'an hour and a half': 90, 'one and a half hours': 90, 'half an hour': 30, 'half hour': 30,
+                 'quarter of an hour': 15, 'an hour': 60, 'one hour': 60, 'a hour': 60}
+        if m.group(1) in words:
+            return words[m.group(1)]
+        n = float(m.group(2).replace(',', '.'))
+        return int(n * 60) if m.group(3).startswith('h') else int(n)
+    if re.search(r'\bquick\b', t):
+        return int(setting('quick_minutes', '15'))
+    return None
+
+
+def _clock(h, mi, ap):
+    h = int(h)
+    if ap == 'pm' and h < 12:
+        h += 12
+    elif not ap and 1 <= h <= 7:
+        h += 12
+    return '%02d:%s' % (h, mi or '00') if h < 24 else None
+
+
+def said_end(text):
+    """(end, window end) said in the request. End: "until 6 pm", "till 11", "from 2 to 4 pm", "9 to 12".
+    Window end: "between 9 and 11", which only counts when no length is said."""
+    t = re.sub(r'\b\d{1,3}\s+[a-z]+\s+' + STREET, ' ', no_dates((text or '').lower()))
+    m = re.search(r'\b(?:until|till)\s+(midnight|noon)\b', t)
+    if m:
+        return ('00:00' if m.group(1) == 'midnight' else '12:00'), None
+    m = re.search(r'\b(?:until|till)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?', t)
+    if m:
+        return _clock(m.group(1), m.group(2), m.group(3)), None
+    m = re.search(r'\bbetween\s+' + RANGE, t)
+    if m:
+        h, mi = (m.group(3) + ':00').split(':')[:2]
+        return None, _clock(h, mi, m.group(4) or m.group(2))
+    m = re.search(r'\b(?:from\s+)?' + RANGE.replace('(?:and|to|till|until|-)', '(?:to|-)'), t)
+    if m:
+        h, mi = (m.group(3) + ':00').split(':')[:2]
+        return _clock(h, mi, m.group(4) or m.group(2)), None
+    return None, None
+
+
+def after_event_said(text):
+    """ "after my physio", "after the client call": the X, when it is not a meal. Else ''."""
+    m = re.search(r'\bafter (?:my|the) ([a-z][a-z ]*?)(?=\s+(?:for|at|on|in|until|till|from|with|to|every|and)\b|[,.]|$)', (text or '').lower())
+    if m and m.group(1).strip() not in ('breakfast', 'lunch', 'dinner', 'meal'):
+        return m.group(1).strip()
+    return ''
+
+
+DAY_PHRASES = [r'\d{4}-\d{2}-\d{2}', r'(?:the )?day after tomorrow', r'tomorrow', r'today', r'tonight', r'in (?:\d+|a|one|two|three|four|five|six|seven|eight|nine|ten) (?:days?|weeks?)',
+               r'(?:sometime )?next week', r'this weekend', r'end of the (?:week|month)', r'(?:first|second|third|fourth|last) [a-z]+ (?:of|in) (?:[a-z]+ )?[a-z]+',
+               r'\d{1,2}(?:st|nd|rd|th)? (?:of )?' + MONTH_RE, MONTH_RE + r' \d{1,2}(?:st|nd|rd|th)?',
+               r'(?:this |next |coming |on )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)']
+
+
+def day_from_text(text, now):
+    """The first day phrase in the request that code can read, never one after "every", "each" or "until"."""
+    t = (text or '').lower()
+    for m in re.finditer(r'\b(' + '|'.join(DAY_PHRASES) + r')\b', t):
+        if re.search(r'\b(every|each|until|till|other|second)\s*$', t[:m.start()]):
+            continue
+        d = words_day(m.group(1), now)
+        if d:
+            return d
+    return None
+
+
+DETAIL_SLOTS = ('day_words', 'start_words', 'start', 'end', 'minutes', 'who', 'where', 'repeat', 'after_event')
+
+
+def has_details(e):
+    return bool((e.get('day') or {}).get('kind') if isinstance(e.get('day'), dict) else e.get('day')) or \
+        any(str(e.get(k) or '').strip() not in ('', '[]') for k in DETAIL_SLOTS)
+
+
+def drop_non_events(events, ctx):
+    """A reminder, a door code, a note or a bring list is part of its event, never an event of its own: such a row
+    goes into the first row's notes. A row with no what, or only a reminder time ("the day before"), is dropped.
+    A row that is only a what, while another row holds the details for the same thing ("deadline for the report"
+    and "report"), becomes one row."""
+    if len(events) > 1:
+        events = [e for e in events if str(e.get('what') or '').strip() and
+                  not re.search(r'^(the )?(day|week|hour) before$', str(e.get('what') or '').strip().lower())] or events[:1]
+    if len(events) > 1:
+        merged = []
+        for e in events:
+            w = set(re.findall(r'[a-z]+', str(e.get('what') or '').lower()))
+            other = next((m for m in merged if (not has_details(m) or not has_details(e)) and w and
+                          (w <= set(re.findall(r'[a-z]+', str(m.get('what') or '').lower())) or
+                           set(re.findall(r'[a-z]+', str(m.get('what') or '').lower())) <= w)), None)
+            if other is None:
+                merged.append(e)
+                continue
+            longer = max((other.get('what') or '', e.get('what') or ''), key=len)
+            for k, v in e.items():
+                if k not in ('row', 'what') and str(other.get(k) or '').strip() in ('', '[]', '{}', 'False', 'false'):
+                    other[k] = v
+            other['what'] = longer
+            how(ctx, 'two rows for one thing, merged into "%s"' % longer)
+        events = merged
+    if len(events) > 1:   # rows with the same day, time and place are one event said with "and" ("breakfast and packing")
+        sig = lambda e: (json.dumps(e.get('day'), sort_keys=True), str(e.get('day_words') or '').lower(), str(e.get('start_words') or '').lower(),
+                         str(e.get('start') or ''), str(e.get('where') or '').lower())
+        if len({sig(e) for e in events}) == 1:
+            first = dict(events[0])
+            first['what'] = ' and '.join(str(e.get('what') or '') for e in events)
+            first['who'] = sorted({w for e in events for w in (e.get('who') or [])})
+            how(ctx, 'rows with the same day, time and place, merged into "%s"' % first['what'])
+            events = [first]
+    keep = [e for e in events if not re.search(NOT_EVENT, str(e.get('what') or '').strip().lower())] or events[:1]
+    ew = event_words(ctx.get('input') or '')
+    if len(keep) > 1 and ew:   # the event words cover every row ("train to my dentist appointment"): one event
+        said_words = set(re.findall(r'[a-z]+', fix_words(ew).lower()))
+        if all(set(re.findall(r'[a-z]+', fix_words(str(e.get('what') or '')).lower())) <= said_words for e in keep):
+            first = dict(keep[0])
+            for e in keep[1:]:
+                for k, v in e.items():
+                    if k not in ('row', 'what') and str(first.get(k) or '').strip() in ('', '[]', '{}', 'False', 'false'):
+                        first[k] = v
+            first['what'] = ew
+            how(ctx, 'one event said as "%s", rows merged' % ew)
+            keep = [first]
+    for e in events:
+        if e not in keep:
+            k = keep[0]
+            k['notes'] = '; '.join(x for x in [str(k.get('notes') or ''), str(e.get('what') or '') + ': ' + str(e.get('notes') or '')] if x.strip())
+            how(ctx, '"%s" is not an event, kept in the notes' % e.get('what'))
+    return keep
+
+
 def resolve_when(events, ctx):
-    """Date from the structured day and the test row's today, start as the model gave it (or the end of the event
-    it comes after), end from minutes or the end time, contradictions ask."""
+    """Date from the structured day and the test row's today; start, end and length read by code from the request
+    where the words have one meaning, the model's slots are the fallback; contradictions ask."""
     now = now_of(ctx)
     existing = read_table('existing-events')
     known = {r['activity'].lower(): int(r['minutes']) for r in read_table('durations') if r.get('minutes', '').isdigit()}
+    said = ctx.get('input') or ''
     out = []
-    for e in events or []:
-        e = tidy(dict(e))
+    events = drop_non_events([tidy(dict(e)) for e in events or []], ctx)
+    one = len(events) == 1   # with several events the whole request's words cannot be given to one of them
+    for e in events:
         # code reads the day words itself where their meaning is fixed, the model's slot is the fallback
-        slot = words_day(e.get('day_words'), now) or e.get('day')
-        if not words_day(e.get('day_words'), now) and str(e.get('day_words') or '').strip() and not (e.get('day') or {}).get('kind'):
+        from_text = one and day_from_text(said, now)
+        slot = from_text or words_day(e.get('day_words'), now) or e.get('day')
+        if not words_day(e.get('day_words'), now) and not from_text and str(e.get('day_words') or '').strip() and not (e.get('day') or {}).get('kind'):
             ask(ctx, 'Which day is %s? You said "%s".' % (label(e), e.get('day_words')), 'date')
         try:
             e['date'] = resolve_day(slot, now).isoformat()
         except (ValueError, TypeError, KeyError):
             e['date'] = None
             ask(ctx, 'Which day is %s?' % label(e), 'date')
-        start, end = hhmm(e.get('start')), hhmm(e.get('end'))
-        start = hhmm(said_clock(e.get('start_words'))) or start   # code reads the time words, the model's HH:MM is the fallback
-        after = str(e.get('after_event') or '').strip().lower()
+        start = hhmm(said_clock(e.get('start_words'))) or (one and hhmm(said_clock(said))) or None
+        start = start or soft_start(e.get('start_words') or '', e.get('what')) or (one and soft_start(said, e.get('what'))) or as_hhmm(e.get('start'))
+        after = str(e.get('after_event') or '').strip().lower() or (one and after_event_said(said)) or ''
         if after and e['date']:
             key = re.sub(r'\b(my|the|appointment)\b', '', after).strip()[:5]
             hits = [x for x in existing if key and key in x['title'].lower()]
             hit = next((x for x in hits if x['date'] == e['date']), None)
-            if not hit and not (e.get('day') or {}).get('kind'):
+            if not hit and not (e.get('day') or {}).get('kind') and not words_day(e.get('day_words'), now) and not from_text:
                 hit = next((x for x in sorted(hits, key=lambda x: x['date']) if x['date'] >= now.date().isoformat()), None)
                 if hit:
                     e['date'] = hit['date']
-            if hit and start and start != hit['end']:
-                ask(ctx, '%s: after %s (%s), or at %s?' % (label(e), after, hit['end'], start))
+            clock_said = hhmm(said_clock(said)) if one else hhmm(said_clock(e.get('start_words')))
+            if hit and clock_said and clock_said != hit['end']:
+                ask(ctx, '%s: after %s (%s), or at %s?' % (label(e), after, hit['end'], clock_said))
             elif hit:
                 start = hit['end']
             elif not start:
                 ask(ctx, 'Which event is "%s" on %s?' % (after, e['date']), 'start')
-        all_day = flag(e, 'all_day') or bool(re.search(r'\b(all|whole) day\b', ctx.get('input') or '', re.I))
-        guess = str(e.get('part_of_day') or '').strip().lower()
-        said = ctx.get('input') or ''
-        # a half day only counts as a length when it is said as one ("for the morning", "the whole afternoon");
-        # "in the evening" is just a start time, so the model's guess never sets an end
-        m = re.search(r'\b(for|keep|the whole|whole|all) (the )?(morning|afternoon|evening)\b', said, re.I)
+        all_day = flag(e, 'all_day') or bool(re.search(r'\b(all|whole) day\b', said, re.I))
+        # a half day only counts as a length when it is said as one ("for the morning", "the whole afternoon")
+        m = re.search(r'\b(for|keep|the whole|whole|all|the rest of) (the )?(morning|afternoon|evening)\b', said, re.I)
         part = m.group(3).lower() if m else ''
-        if not part and guess in ('morning', 'afternoon', 'evening') and not start:
-            start = setting('half_day_' + guess, '08:00-12:00').split('-')[0]
-        m = re.search(r'\bat (noon|midday|(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\b', said, re.I)
-        if m and start:
+        no_address = re.sub(r'\b\d{1,3}\s+[a-z]+\s+' + STREET, ' ', no_dates(said.lower()))   # "at 8 Station Road" is not 8 o'clock
+        m = re.search(r'\bat (noon|midday|(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)\b', no_address, re.I)
+        if m and start and one and (m.group(1).lower() in ('noon', 'midday') or int(m.group(2)) < 24):
             if m.group(1).lower() in ('noon', 'midday'):
                 said_start = '12:00'
             else:
                 h = int(m.group(2)); ap = (m.group(4) or '').lower()
-                h = h + 12 if (ap == 'pm' or (not ap and 1 <= h <= 7)) and h < 12 else h
+                h = h + 12 if (ap == 'pm' or (not ap and not m.group(3) and 1 <= h <= 7)) and h < 12 else h
                 said_start = '%02d:%s' % (h, m.group(3) or '00')
             if said_start != start:
                 ask(ctx, '%s: at %s, or at %s?' % (label(e), said_start, start))
-        m = re.search(r'\bfrom (\d{1,2})(?::(\d{2}))?\s*(am|pm)? (?:to|till|until|-) (\d{1,2})(?::(\d{2}))?\s*(am|pm)?', said, re.I)
-        if m and start:   # a range said in words must agree with the start
-            h = int(m.group(1)); ap = (m.group(3) or m.group(6) or '').lower()
-            h = h + 12 if (ap == 'pm' or (not ap and 1 <= h <= 7)) and h < 12 else h
-            rs = '%02d:%s' % (h, m.group(2) or '00')
-            if rs != start:
-                ask(ctx, '%s: from %s, or at %s?' % (label(e), rs, start))
-        if all_day and (start or end or part):
-            ask(ctx, '%s: all day, or %s?' % (label(e), 'from ' + start if start else 'the ' + part if part else 'until ' + end))
+        if one:   # two different times in one request: a range plus another range, or a soft time plus a clock range
+            ranges = re.findall(r'\b(?:between|from)?\s*(\d{1,2}(?::\d{2})?)\s*(?:am|pm)?\s*(?:and|to|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?', no_dates(said.lower()))
+            soft = soft_start(said, e.get('what'))
+            clock = hhmm(said_clock(said))
+            outside = re.sub(r'\b(?:between|from)?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:and|to|-|till|until)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?', ' ', no_dates(said.lower()))
+            outside = re.sub(r'\b(until|till)\s+\S+(\s*(am|pm))?', ' ', outside)
+            single = [hhmm(said_clock(x)) for x in re.findall(r'\b(?:at\s+)?(half \d{1,2}|noon|midday|\d{1,2}:\d{2}|\d{1,2}\s*(?:am|pm))\b', outside)]
+            single = [x for x in single if x]
+            if ranges and single and hhmm(said_clock(said)) and any(x != hhmm(said_clock(said)) for x in single) and not re.search(r'\b(from|between)\s+(half \d|noon|\d{1,2}:\d{2})', said.lower()):
+                ask(ctx, '%s: at %s, or from %s?' % (label(e), [x for x in single if x != hhmm(said_clock(said))][0], hhmm(said_clock(said))))
+            elif len(set(ranges)) > 1 or (soft and clock and re.search(r'\b(after lunch|after dinner|after breakfast|in the morning|in the afternoon|in the evening)\b', said, re.I) and soft != clock):
+                ask(ctx, '%s: %s?' % (label(e), ' or '.join(sorted(set(ranges))) if len(set(ranges)) > 1 else '%s or %s' % (soft, clock)))
+        if all_day and not after and start and re.search(r'\b(between|from)\s+\d{1,2}(?::\d{2})?\s*(am|pm)?\s*(and|to|-)\s*\d{1,2}', no_dates(said.lower())):
+            all_day = False   # "between 6 and 9 pm all day": the range wins, "all day" is the slip, no question (2.11.26, row 7)
+        if all_day and after:
+            ask(ctx, '%s: after %s, or all day?' % (label(e), after))
+        elif all_day and (start or part):
+            ask(ctx, '%s: all day, or %s?' % (label(e), 'from ' + start if start else 'the ' + part))
+        end, window_end = said_end(said) if one else (None, None)
+        end = end or (None if one else as_hhmm(e.get('end')))
+        if end and start and end <= start and int(end[:2]) < 12 and '%02d%s' % (int(end[:2]) + 12, end[2:]) > start:
+            end = '%02d%s' % (int(end[:2]) + 12, end[2:])   # "after dinner until 11" ends at 23:00, not 11:00
         if part in ('morning', 'afternoon', 'evening') and not all_day:
             a, b = setting('half_day_' + part, '08:00-12:00').split('-')
             if (start and not (a <= start < b)) or (end and not (a < end <= b)):
                 ask(ctx, '%s: the %s (%s to %s), or from %s?' % (label(e), part, a, b, start or end))
+            if not hhmm(said_clock(said)):
+                start = a   # "keep the whole morning" starts when the morning starts
+                clock_now = now_of(ctx)
+                if re.search(r'\bthe rest of (the )?' + part, said, re.I) and clock_now.strftime('%Y-%m-%d') == e.get('date') and a <= clock_now.strftime('%H:%M') < b:
+                    start = clock_now.strftime('%H:%M')   # "the rest of the afternoon" said at 15:00 starts now (3.11.26)
             start, end = start or a, end or b
-        mins = e.get('minutes')
-        try:
-            mins = int(float(mins)) if mins not in (None, '') else None
-        except ValueError:
-            mins = None
+        mins = said_minutes(said) if one else None
+        if mins is None and not one:
+            try:
+                mins = int(float(e.get('minutes'))) if e.get('minutes') not in (None, '') else None
+            except (TypeError, ValueError):
+                mins = None
         e['end_date'] = e['date']
         if all_day:
             e.update(allDay=True, start=None, end=None)
@@ -394,11 +617,14 @@ def resolve_when(events, ctx):
                 if calc != end:
                     ask(ctx, '%s: until %s, or for %d minutes?' % (label(e), end, mins))
             if not end:
-                if not mins:
-                    what = (e.get('what') or '').lower()
-                    mins = next((m for a, m in sorted(known.items(), key=lambda x: -len(x[0])) if re.search(r'\b' + re.escape(a) + r'\b', what)),
-                                int(setting('default_minutes', '30')))
-                end, e['end_date'] = add_minutes(e['date'], start, mins)
+                if not mins and window_end and window_end > start:
+                    end = window_end
+                else:
+                    if not mins:
+                        what = ((event_words(said) if one else None) or e.get('what') or '').lower()
+                        mins = next((m for a, m in sorted(known.items(), key=lambda x: -len(x[0])) if re.search(r'\b' + re.escape(a) + r'\b', what)),
+                                    int(setting('default_minutes', '30')))
+                    end, e['end_date'] = add_minutes(e['date'], start, mins)
             elif end <= start:   # ends after midnight
                 e['end_date'] = (date.fromisoformat(e['date']) + timedelta(days=1)).isoformat()
             e.update(allDay=False, start=start, end=end, minutes=mins)
@@ -453,6 +679,11 @@ def resolve_repeat(events, ctx):
         # day names as RFC 5545 two-letter codes (the model sometimes writes TUE or TUESDAY)
         rule = re.sub(r'BYDAY=([^;]*)', lambda b: 'BYDAY=' + re.sub(r'([+-]?\d*)(MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*', lambda m: m.group(1) + m.group(2)[:2], b.group(1)), rule)
         words = str(e.get('until_words') or '').strip()
+        m = re.search(r'\b(?:until|till)\s+((?:the\s+)?(?:end of (?:the )?\w+|\d{4}-\d{2}-\d{2}|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?|christmas(?: day)?|new year(?:\'s eve)?|easter))\b',
+                      re.sub(r'"[^"]*"', '', (ctx.get('input') or '').lower()))
+        words = m.group(1) if m else ''   # the end of a repeat is read from the request, never guessed
+        if 'COUNT=' in rule or re.match(r'^(for\s+)?\d+\s+(weeks?|days?|months?|times)$', words.lower()):
+            words = ''   # "for 4 weeks" is a count, never an end date
         e['rrule'] = None
         if words and not rule:
             ask(ctx, 'How often does %s repeat?' % label(e), 'rrule')
@@ -473,6 +704,91 @@ def resolve_repeat(events, ctx):
 
 # ---------- (d) title ----------
 
+EVENT_STOP = r'(?:with|w/|w|for|at|on|in|from|every|each|this|next|coming|tomorrow|today|tonight|after|until|till|between|sometime|end of (?:the )?(?:week|month)|here|via|by|once|weekly|daily|monthly|the (?:first|second|third|fourth|last)|\d)'
+
+
+def vocabulary():
+    """Words Alex uses for events: activities, calendar keywords, the settings vocabulary, the meant side of fixes."""
+    words = set()
+    for r in read_table('durations'):
+        words.update(r['activity'].lower().split())
+    for r in read_table('calendars'):
+        for k in split_list(r['keywords']):
+            words.update(k.split())
+    words.update(w for w in split_list(setting('vocabulary')) for w in w.split())
+    for r in read_table('abbreviations'):
+        words.update(r['long'].lower().split())
+    return {w for w in words if len(w) >= 3}
+
+
+def fix_words(text):
+    """Misheard words and abbreviations from the tables, then typos close to Alex's own event words ("gmy" = gym)."""
+    for r in read_table('speech-fixes'):
+        text = re.sub(r'(?i)\b' + re.escape(r['heard']) + r'\b', r['meant'], text)
+    for r in read_table('abbreviations'):
+        if r['short'].isalnum() or r['short'] in ('w/',):
+            text = re.sub(r'(?i)(?<![\w/])' + re.escape(r['short']) + r'(?![\w/])', r['long'], text)
+        elif r['short'] in ('+', '&'):
+            text = text.replace(' %s ' % r['short'], ' %s ' % r['long'])
+    vocab = vocabulary()
+    out = []
+    for w in text.split(' '):
+        low = w.lower().strip('.,')
+        if len(low) == 3 and low.isalpha() and low not in vocab:
+            m = [v for v in vocab if len(v) == 3 and sorted(v) == sorted(low)]   # "gmy" = gym, letters swapped
+            if m:
+                w = m[0]
+        elif len(low) >= 4 and low.isalpha() and low not in vocab:
+            m = difflib.get_close_matches(low, vocab, n=1, cutoff=0.8)
+            if m and sorted(m[0]) == sorted(low) or (m and difflib.SequenceMatcher(None, low, m[0]).ratio() >= 0.86):
+                w = m[0]
+        out.append(w)
+    return ' '.join(out)
+
+
+def event_words(said):
+    """The words for the event itself, read from the request: "Schedule finally go through the thesis results with
+    fresh eyes this afternoon" is "go through the thesis results". None when nothing is left."""
+    t = event_sentence(said)
+    t = re.sub(r'(?i)^(tomorrow|today|tonight)\s+at\s+\S+(\s+(am|pm))?\s+', '', t)   # "Tomorrow at noon put ..."
+    t = re.sub(r'(?i)^(please\s+|can you\s+|could you\s+)?(schedule|set up|add|put|create|book|make|block)\s+', '', t)
+    t = re.sub(r'(?i)\b(uhh*|umm*|finally|quick|just|maybe|possibly)\b,?\s*', '', t)
+    t = re.sub(r'(?i)\b(?:that|the)\s+([a-z][a-z ]*?)\s+thing\b', r'\1', t)   # "that lunch thing" = lunch
+    t = re.sub(r'(?i),?\s*the [a-z ]+? one\b|,?\s*or whatever\b', '', t)      # "the planning one", "or whatever"
+    t = re.sub(r'(?i)^(a|an|the|my)\s+', '', t.strip(' ,.'))
+    t = fix_words(t)
+    t = t.split(',')[0]   # an aside after a comma ("client workshop, not agreed yet") is not the event
+    m = re.search(r'(?i)(?:\s|\.|$)' + EVENT_STOP + r'\b', ' ' + t + ' ')
+    words = t[:max(m.start() - 1, 0)].strip(' ,.') if m else t.strip(' ,.')
+    words = re.sub(r'(?i)^(a|an|the|my)\s+', '', words)
+    return words or None
+
+
+def named_people(people, said, what=''):
+    """The people a title names, once each, as the people table writes them without brackets ("my boss" is Martin,
+    natalie@example.com is Natalie): only people the request really names, never a place or someone already in what."""
+    table = read_table('people')
+    places = {n for r in read_table('places') for n in [r['place'].lower()] + split_list(r.get('also_written_as'))}
+    low = said.lower()
+    out = []
+    for p in people:
+        p = str(p).strip()
+        as_said = re.sub(r'\s*\(.*\)$', '', p).strip().lower()
+        p = SLIPS.get(as_said, p)   # "martian" is Martin, "the Fabrikam people" the client
+        base = re.sub(r'\s*\(.*\)$', '', p).strip().lower()
+        if not base or base in places:
+            continue
+        rows = [r for r in table if p.lower() in (r['person'].lower(), r['email'].lower())] or \
+               [r for r in table if base == re.sub(r'\s*\(.*\)$', '', r['person']).lower() or base in split_list(r.get('also_written_as'))]
+        spell = [base, as_said] + [n for r in rows for n in [re.sub(r'\s*\(.*\)$', '', r['person']).lower(), r['email'].lower()] + split_list(r.get('also_written_as'))]
+        if not any(re.search(r'\b' + re.escape(n) + r"\b(?!'s)", low) for n in spell if n):
+            continue   # nobody said this person
+        name = re.sub(r'\s*\(.*\)$', '', rows[0]['person']) if rows else ('' if '@' in p else p)
+        if name and not re.search(r'\b' + re.escape(re.sub(r'^the ', '', name.lower())) + r"\b(?!'s)", what.lower()) and name not in out:
+            out.append(name)
+    return out
+
+
 def make_title(events, ctx):
     """The title from what + who by naming.csv, company short names from companies.csv, MAYBE, TEMP, PH."""
     pats = {r['rule']: r['pattern'] for r in read_table('naming')}
@@ -480,36 +796,191 @@ def make_title(events, ctx):
     out = []
     for e in events or []:
         e = dict(e)
-        what = (e.get('what') or '').strip()
-        if str(e.get('ask') or '').strip():
+        what = (event_words(ctx.get('input') or '') if len(events or []) == 1 else None) or (e.get('what') or '').strip()   # code first, intake's what as fallback
+        if '?' in str(e.get('ask') or ''):   # a model "question" without a question mark ("send Dennis an invite") is not one (4.11.26)
             ask(ctx, str(e['ask']).strip(), 'what')
-        what = re.sub(r'^((please|can you|could you|schedule|set up|add|put|create|book|make|block|uh+|um+|the|a)\s+)+', '', what, flags=re.I).strip(' ,.')
+        what = re.sub(r'\b(the thing|or whatever|finally|quick|uh+|um+)\b,?', ' ', what, flags=re.I)
+        what = re.sub(r'\s+', ' ', what).strip(' ,.')
+        what = re.sub(r'^((please|can you|could you|schedule|set up|add|put|create|book|make|block|the|a)\s+)+', '', what, flags=re.I).strip(' ,.')
+        for r in read_table('abbreviations'):
+            if r['short'].isalnum() or r['short'] in ('w/',):
+                what = re.sub(r'(?i)(?<![\w/])' + re.escape(r['short']) + r'(?![\w/])', r['long'], what)
+        what, _, inside = what.partition(' with ')   # "Christmas party with the team": the people go to the people part
+        what = re.sub(r'(?i)\s+from [a-z]+ to [a-z]+$', '', what).strip(' ,.')
         what = what[:1].upper() + what[1:]
+        first = clean_sentence(ctx.get('input') or '')
+        if re.search(r'(?i)\b(maybe|possibly|pencil in)\b', first):
+            e['maybe'] = True
+        if re.search(r'(?i)\bnot (agreed|confirmed)( yet)?\b', first):
+            e['not_agreed'] = True
         if not what:
             ask(ctx, 'What is the event?', 'what')
         elif re.search(PROMPT_WORDS, what, re.I):
             ask(ctx, 'What should "%s" be called?' % what, 'title')
-        who = [re.sub(r'\s*\(.*\)$', '', p) for p in (e.get('people') or e.get('who') or []) if str(p).strip()]
-        places = {n for r in read_table('places') for n in [r['place'].lower()] + split_list(r.get('also_written_as'))}
-        who = [w for w in who if w.strip() and w.lower() not in what.lower() and w.lower() not in ('the team', 'the client') and w.lower() not in places]
+        said_names = [x['person'] for x in said_people(event_sentence(ctx.get('input') or ''))]   # the event sentence only: "Mum always cooks too much" in a note is not Mum coming (4.11.26)
+        who = named_people(said_names + [x.strip() for x in re.split(r' and |,', inside) if x.strip()] + list(e.get('people') or []) + list(e.get('who') or []), event_sentence(ctx.get('input') or ''), what)
+        home = re.search(r"\b(\w+)'s\b", first)
+        if not who and home:   # nobody named, at a family member's home: with them ("dinner at Mum's" is Dinner with Mum, 2.11.26)
+            fam = next((r for r in read_table('people') if r['calendar'] == 'Family' and home.group(1).lower() in
+                        [re.sub(r'\s*\(.*\)$', '', r['person']).lower()] + split_list(r.get('also_written_as'))), None)
+            if fam:
+                who = [re.sub(r'\s*\(.*\)$', '', fam['person'])]
         title = pats['with_who'].replace('{What}', what).replace('{who}', ' and '.join(who)) if who else pats['plain'].replace('{What}', what)
-        text = (what + ' ' + ' '.join(e.get('who') or []) + ' ' + ' '.join(e.get('people') or [])).lower()
+        text = (what + ' ' + ' '.join(who) + ' ' + first).lower()   # company keywords anywhere in the event sentence
         co = next((c for c in companies if any(re.search(r'\b' + re.escape(k) + r'\b', text) for k in split_list(c['keywords']))), None)
-        if co and flag(e, 'not_agreed'):
-            title = pats['not_agreed'].replace('{SHORT}', co['short']).replace('{title}', title)
-        elif co and flag(e, 'booked_no_invite'):
-            title = pats['booked_no_invite'].replace('{SHORT}', co['short']).replace('{title}', title)
-        else:
-            if co:
-                title = pats['company'].replace('{SHORT}', co['short']).replace('{title}', title)
-            if flag(e, 'maybe'):
-                title = pats['maybe'].replace('{title}', title)
+        if not co:   # a person who works for a company (people table): Jordan (work) is Northwind
+            named = said_people(ctx.get('input') or '')
+            cal = code_calendar(e, ctx.get('input') or '', named) or str(e.get('calendar') or '')
+            firsts = {}
+            for r in named:   # two people with the same first name: the one the calendar points to
+                firsts.setdefault(re.sub(r'\s*\(.*\)$', '', r['person']).lower(), []).append(r)
+            chosen = [g[0] if len(g) == 1 else (next((r for r in g if r['calendar'] == cal), None) or next((r for r in g if r['calendar'] != 'Work'), g[0]))
+                      for g in firsts.values()]
+            shorts = {r['company'] for r in chosen if r.get('company')}
+            pick = 'FAB' if 'FAB' in shorts else ('NW' if 'NW' in shorts else None)
+            co = next((c for c in companies if c['short'] == pick), None) if pick else None
+        if co:   # Alex's naming: what, with who, the company in brackets (no TEMP or PH since 1.11.26)
+            title = pats['company'].replace('{SHORT}', co['short']).replace('{title}', title)
+        if flag(e, 'maybe'):
+            title = pats['maybe'].replace('{title}', title)
         how(ctx, title)
         out.append(dict(e, title=title))
     return done(ctx, out)
 
 
 # ---------- (e)(f) calendar, people, clash ----------
+
+# ---------- code first, the model as fallback: lookups with one right answer ----------
+
+JOURNEY = r'\b(train|trn|flight|fly|drive|bus|commute|trip|travel|ride to|journey)\b'
+
+
+def said_people(said):
+    """People-table people the request names: by name or spelling ("my boss", "natty"), "the team", "the client".
+    "Mum's" is a place, not Mum."""
+    t = re.sub(r'"[^"]*"', '', said.lower())
+    for word, person in [(w, SLIPS.get(w)) for w in set(re.findall(r'[a-z]+', t))]:
+        if person and person != 'the client' and word not in ('client',):
+            t += ' ' + person.lower()   # a misheard name counts as the person ("martian" = Martin)
+    out = []
+    for r in read_table('people'):
+        names = [re.sub(r'\s*\(.*\)$', '', r['person']).lower()] + split_list(r.get('also_written_as'))
+        names = [n for n in names if n not in ('team', 'client', 'boss')] + (['boss'] if r['person'] == 'Martin' else [])
+        if r['person'] in ('the team', 'the client'):
+            word = r['person'].split()[-1]
+            if re.search(r'\b(with|w/|w|and|invite|send)\s+(the\s+)?' + word + r'\b', t) or \
+                    re.search(r'\bthe ' + word + r'\s+(is|are|joins|joining|dials|will|comes|coming)\b', t) or \
+                    (word == 'client' and re.search(r'\bfabrikam\b', t)):
+                out.append(r)
+            continue
+        if any(re.search(r'\b' + re.escape(n) + r"\b(?!'s)", t) for n in names if n) or r['email'].lower() in t:
+            out.append(r)
+    return out
+
+
+def event_sentence(said):
+    """The first sentence, where the event itself is said (notes come after it); quotes left out."""
+    t = re.sub(r'"[^"]*"', '', said)
+    return re.split(r'(?<=[.!?])\s+(?=[A-Z])', t.strip())[0]
+
+
+def clean_sentence(said):
+    """The event sentence with misheard words fixed and "after my X" removed, so the earlier event (a run, a standup,
+    a lecture) never decides this event's calendar or company."""
+    t = event_sentence(said)
+    for r in read_table('speech-fixes'):
+        t = re.sub(r'(?i)\b' + re.escape(r['heard']) + r'\b', r['meant'], t)
+    return re.sub(r'(?i)\bafter (my|the) [a-z ]+?(?=\s+(for|at|on|in|until|till|from|with|to|every|and)\b|[,.]|$)', ' ', t)
+
+
+def code_calendar(e, said, named):
+    """The calendar by the owner's rules, read from the tables; None when no rule decides (then the model's pick)."""
+    cals = read_table('calendars')
+    first = clean_sentence(said).lower()
+    what = str(e.get('what') or '').lower()
+    person_words = {n for p in read_table('people') for n in [re.sub(r'\s*\(.*\)$', '', p['person']).lower()] + split_list(p.get('also_written_as'))}
+    if re.search(JOURNEY, what + ' ' + first) and ('->' in str(e.get('where') or '') or re.search(r'\bfrom \w+ to \w+', first)) \
+            and not any(re.search(r'\b' + re.escape(k) + r'\b', what + ' ' + first) for c in cals if c['use'] != 'travel' for k in split_list(c['keywords']) if k not in person_words | {'martin', 'client', 'team'}):
+        return next((c['calendar'] for c in cals if c['use'] == 'travel'), None)
+    if any(p['person'] in ('Martin', 'the client') for p in named) or re.search(r'\b(client|klein|fabrikam)\b', first):
+        return 'Work'
+    person_words = {n for p in read_table('people') for n in [re.sub(r'\s*\(.*\)$', '', p['person']).lower()] + split_list(p.get('also_written_as'))}
+    hits = sorted(((len(k), c['calendar']) for c in cals for k in split_list(c['keywords'])
+                   if k not in person_words and re.search(r'\b' + re.escape(k) + r'\b', what + ' ' + first)), reverse=True)
+    here = {p['person'] for p in said_people(event_sentence(said))}
+    if hits and hits[0][1] == 'Self-Improvement' and any(p['calendar'] == 'Friends' and p['person'] in here for p in named):
+        return 'Friends'   # sport with friends goes on Friends (persona rule 6, changed 1.11.26)
+    if hits:
+        return hits[0][1]
+    own = {p['calendar'] for p in named if p['person'] in here and p['person'] not in ('Jordan (work)',)}
+    if len(own) == 1:
+        return own.pop()
+    if re.search(r"\b(mum|mama|mom|dad|grandma)'s\b", first):   # a family member's home, nobody else named
+        return 'Family'
+    return None
+
+
+def code_place(said, e):
+    """The place said in the event sentence: a link, Teams, a trip A -> B, an address, a room, a known place, a city."""
+    first = event_sentence(said)
+    m = re.search(r'https?://\S+', first)
+    if m:
+        return m.group(0).rstrip('.,')
+    if re.search(r'\bon teams\b', first, re.I):
+        return 'Microsoft Teams'
+    m = re.search(r'\bfrom ([A-Z][a-z]+) to ([A-Z][a-z]+)\b', first)
+    if m:
+        return '%s -> %s' % m.groups()
+    m = re.search(r'\b(?:at|in)\s+(\d{1,3}\s+[A-Z][a-z]+\s+' + STREET.replace(r'\b', '') + r')', first, re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r'\bin (room [\w.]+)', first, re.I)
+    if m:
+        return m.group(1)
+    low = first.lower()
+    for r in sorted(read_table('places'), key=lambda r: -len(r['place'])):
+        for n in sorted([r['place'].lower()] + split_list(r.get('also_written_as')), key=len, reverse=True):
+            n2 = re.sub(r'^(at|on|the)\s+', '', n)
+            if re.search(r'\b(?:at|in|to|meet at)\s+(?:the\s+)?' + re.escape(n2) + r'\b', low):
+                return r['place']
+    m = re.search(r'\bin ([A-Z][a-z]{2,})\b', first)
+    if m and m.group(1) not in ('December', 'November', 'January', 'October'):
+        return m.group(1)
+    return None
+
+
+def said_place(place, said):
+    """Is this place in the request, by its own words or one of its spellings in the places table?"""
+    low = event_sentence(said).lower()   # the place of the event, never one mentioned in a note
+    names = [place.lower()] + [n for r in read_table('places') if r['place'].lower() == place.lower() for n in split_list(r.get('also_written_as'))]
+    parts = [x.strip() for x in re.split(r'->', place.lower())]
+    return any(re.sub(r'^(the|at|on)\s+', '', n) in low for n in names if n) or all(x in low for x in parts if x)
+
+
+def code_notes(said):
+    """The notes: every sentence after the event sentence except a reminder, and a quote inside the event sentence."""
+    parts = re.split(r'(?<=[.!?])\s+(?=[A-Z])', said.strip())
+    notes = [p for p in parts[1:] if not re.match(r'^(remind me|reminder)\b', p, re.I)]
+    quote = re.findall(r'"([^"]+)"', parts[0]) if parts else []
+    text = ' '.join(quote + notes).strip()
+    return text or None
+
+
+class _Slips(dict):
+    """Single misheard words from the speech-fixes table that mean a person ("klein" -> "the client")."""
+    def get(self, k, default=None):
+        people = {n for r in read_table('people') for n in [r['person'].lower()] + split_list(r.get('also_written_as'))}
+        companies = {r['company'].lower() for r in read_table('companies')}
+        if any(c in k for c in companies) or k == 'client':
+            return 'the client'   # "the Fabrikam people": a company in the companies table is the client
+        for r in read_table('speech-fixes'):   # only whole entries of the table: unseen slips stay unseen (test set design)
+            if r['heard'].lower() == k and r['meant'].lower() in people:
+                return r['meant']
+        return default
+
+
+SLIPS = _Slips()
+
 
 def check_event(events, ctx):
     """Calendar name must exist, people get their emails by exact name, clashes with existing events ask,
@@ -519,9 +990,11 @@ def check_event(events, ctx):
     existing = read_table('existing-events')
     anyway = re.search(r'book (it )?anyway|anyway', ctx.get('input') or '', re.I)
     out = []
+    said_raw = ctx.get('input') or ''
+    named = said_people(said_raw)
     for e in events or []:
         e = dict(e)
-        c = str(e.get('calendar') or '').strip()
+        c = code_calendar(e, said_raw, named) or str(e.get('calendar') or '').strip()   # code first, the model's pick as fallback
         if c not in cals:
             opts = [x.strip() for x in re.split(r'\s+or\s+|,', c) if x.strip() in cals] or difflib.get_close_matches(c, cals, n=2, cutoff=0.5)
             ask(ctx, 'Which calendar is %s on? %s' % (label(e), ' or '.join(opts) if len(opts) > 1 else (opts[0] + '?' if opts else '')), 'calendar')
@@ -529,25 +1002,47 @@ def check_event(events, ctx):
         e['calendar'] = c
         att = []
         place_names = {n for r in read_table('places') for n in [r['place'].lower()] + split_list(r.get('also_written_as'))}
-        for p in e.get('people') or []:
-            if not str(p).strip() or str(p).strip().lower() in place_names or str(p).strip() in cals:
-                continue   # empty, or a place or calendar the model put among the people
+        said = (ctx.get('input') or '').lower()
+        said_emails = [m.rstrip('.') for m in re.findall(r'[\w.+-]+@[\w-]+\.[\w.]+', said)]
+        # the model's picks plus everyone intake heard, each kept only if the request names them (below)
+        for p in [x['person'] for x in named] + list(e.get('people') or []) + list(e.get('who') or []) + said_emails:
+            if re.search(r'\(place\)', str(p), re.I) or re.search(r'\b(from|to)\s+' + re.escape(str(p).strip()) + r'\b', said_raw, re.I):
+                continue   # a place or a trip's start or end the model put among the people
+            as_said = re.sub(r'\s*\(.*\)$', '', str(p)).strip().lower()
+            p = SLIPS.get(str(p).strip().lower(), p)   # a misheard name: "Klein" is the client, "martian" is Martin
+            p = SLIPS.get(re.sub(r'\s*\(.*\)$', '', str(p)).strip().lower(), p)
+            base = re.sub(r'\s*\(.*\)$', '', str(p)).strip().lower()
+            row = people.get(str(p).strip().lower()) or people.get(base)
+            names = [base, as_said] + (split_list(row.get('also_written_as')) if row else [])
+            if not str(p).strip() or base in place_names or str(p).strip() in cals:
+                continue   # empty, or a place, calendar or the event itself the model put among the people
+            if '@' not in base and not any(re.search(r'\b' + re.escape(n) + r'\b', said) for n in names if n):
+                continue   # a person nobody named in the request
+            if base in ('client', 'the client', 'team', 'the team') and not any(x['person'] == 'the ' + base.replace('the ', '') for x in named):
+                continue   # "the client workshop" names the event, not the client coming (prompt rule, 4.11.26)
             r = people.get(str(p).strip().lower())
             if not r:
                 base = re.sub(r'\s*\(.*\)$', '', str(p)).strip().lower()
-                r = people.get(base) or next((x for x in people.values() if base in split_list(x.get('also_written_as'))), None)
+                spelled = [x for x in people.values() if base in split_list(x.get('also_written_as'))]
+                r = people.get(base) or (spelled[0] if len(spelled) == 1 else None)
             if not r:   # a name as said: the table's other spellings, two of them = the one on this event's calendar
                 lp = str(p).strip().lower()
                 hits = [x for x in people.values() if lp in split_list(x.get('also_written_as')) or lp == re.sub(r'\s*\(.*\)$', '', x['person']).lower()]
-                hits = [x for x in hits if x['calendar'] == c] if len(hits) > 1 else hits
+                if len(hits) > 1:   # same first name: the one on this calendar, else the one who is not work
+                    hits = [x for x in hits if x['calendar'] == c] or [x for x in hits if x['calendar'] != 'Work']
                 r = hits[0] if len(hits) == 1 else None
             if r:
-                att.append({'name': re.sub(r'\s*\(.*\)$', '', r['person']), 'email': r['email']})
+                first = re.sub(r'\s*\(.*\)$', '', r['person']).lower()
+                twins = [x for x in people.values() if re.sub(r'\s*\(.*\)$', '', x['person']).lower() == first]
+                if len(twins) > 1:   # same first name: the one on this calendar, else the one who is not work
+                    r = next((x for x in twins if x['calendar'] == c), None) or next((x for x in twins if x['calendar'] != 'Work'), r)
+                if invited(r, said):
+                    att.append({'name': re.sub(r'\s*\(.*\)$', '', r['person']), 'email': r['email']})
             elif '@' in str(p):
                 att.append({'name': p, 'email': p})
-            else:
-                ask(ctx, 'Who is %s?' % p, 'attendees')
-        e['attendees'] = att
+            elif re.search(r'\b' + re.escape(str(p).strip()[:1].upper() + str(p).strip()[1:]) + r'\b', said_raw):
+                ask(ctx, 'Who is %s?' % p, 'attendees')   # only a name the request writes as a name (Dana), never "braces"
+        e['attendees'] = list({a['email'].lower(): a for a in att}.values())   # one invite per email
         if e.get('date') and e.get('start') and not anyway:
             for x in existing:
                 if x['date'] == e['date'] and x['start'] < (e['end'] if e.get('end_date') == e['date'] else '24:00') and e['start'] < x['end']:
@@ -556,10 +1051,24 @@ def check_event(events, ctx):
             ask(ctx, 'Shall I put in %s on %s?' % (label(e), e.get('date')))
         how(ctx, '%s, %s' % (c or '?', ', '.join(a['name'] for a in att) or 'nobody'))
         keep = ['row', 'title', 'date', 'end_date', 'start', 'end', 'allDay', 'location', 'attendees', 'calendar', 'rrule', 'desc', 'reminder_minutes']
-        e['location'] = place_of(e.get('where'))
+        guess = place_of(e.get('where'))
+        if guess and not said_place(guess, said_raw):
+            guess = None   # the model's place is not in the request: never invent one
+        e['location'] = code_place(said_raw, e) or guess   # code first, intake's place as fallback
+        e['desc'] = code_notes(said_raw) or e.get('desc')
         e['reminder_minutes'] = said_reminder(ctx.get('input'))   # code reads "remind me ...", never invented
         out.append({k: e.get(k) for k in keep})
     return done(ctx, out)
+
+
+def invited(person, said):
+    """Only people the owner invites get an invitation: invite = yes in the people table, or the request asks for it
+    ("invite Sam", "send Sam an invite") or writes their email. Everyone else is only named in the title."""
+    if str(person.get('invite') or '').strip().lower() == 'yes' or person['email'].lower() in said:
+        return True
+    names = [re.sub(r'\s*\(.*\)$', '', person['person']).lower()] + split_list(person.get('also_written_as'))
+    return any(re.search(r'\b(invite|send)\b[^.]{0,30}\b' + re.escape(n) + r'\b|\b' + re.escape(n) + r'\b[^.]{0,15}\binvite\b', said)
+               for n in names if n)
 
 
 def place_of(where):
@@ -567,6 +1076,9 @@ def place_of(where):
     w = str(where or '').split(';')[0].strip()
     if not w:
         return None
+    m = re.match(r'^(?:from\s+)?([A-Z][\w\'. ]*?)\s+to\s+([A-Z][\w\'. ]*)$', w)
+    if m:   # a trip said as "Vienna to Bratislava" is written "Vienna -> Bratislava"
+        return '%s -> %s' % (m.group(1).strip(), m.group(2).strip())
     if '->' in w or re.search(r'https?://', w):
         return w
     low = re.sub(r'^(the|at|in|on)\s+', '', w.lower())
@@ -595,5 +1107,26 @@ def test_send(rows, ctx):
     return out
 
 
-STEPS = {'thesis_when': resolve_when, 'thesis_repeat': resolve_repeat, 'thesis_title': make_title,
+def join_title(events, ctx):
+    """Version 3: the model decided what, people, company and maybe in their own steps; this only joins them by the
+    naming pattern ("MAYBE (FAB) Lunch with the client"), the way code carries rows. No decision is made here."""
+    pats = {r['rule']: r['pattern'] for r in read_table('naming')}
+    out = []
+    for e in events or []:
+        e = dict(e)
+        what = str(e.get('what') or '').strip()
+        what = what[:1].upper() + what[1:]
+        people = [str(p).strip() for p in (e.get('people') if isinstance(e.get('people'), list) else []) if str(p).strip()]
+        people = [p for p in people if p.lower() not in what.lower()]
+        title = pats['with_who'].replace('{What}', what).replace('{who}', ' and '.join(people)) if people else pats['plain'].replace('{What}', what)
+        co = str(e.get('company') or '').strip().strip('()')
+        if co:
+            title = pats['company'].replace('{SHORT}', co).replace('{title}', title)
+        if str(e.get('maybe')).lower() == 'true':
+            title = pats['maybe'].replace('{title}', title)
+        out.append(dict(e, title=title))
+    return out
+
+
+STEPS = {'thesis_join_title': join_title, 'thesis_when': resolve_when, 'thesis_repeat': resolve_repeat, 'thesis_title': make_title,
          'thesis_check': check_event, 'thesis_test_send': test_send}
