@@ -1,0 +1,30 @@
+{
+  "calendar": {
+    "about": "Turns a spoken or typed request, such as 'dentist next Wednesday at half 10', into an event in the person's calendar.",
+    "steps": [
+      {"id": "C1", "step": "Read the request and turn it into a table row with fixed columns: what the event is, the day words, the time words, the people, the place and anything else said.", "ref": "model"},
+      {"id": "C2", "step": "Work out the date, the start and the end from the day and time words and today's date. How long each type of appointment lasts is stored in a table.", "ref": "code"},
+      {"id": "C3", "step": "Turn repeat words such as 'every Monday' or 'for 4 weeks' into a repeat rule in the iCalendar format.", "ref": "code"},
+      {"id": "C4", "step": "Choose which of the person's calendars the event goes into and which contacts are meant. Keywords and a people table cover most requests, the rest depends on what the event is about.", "ref": "code_first_model_fallback"},
+      {"id": "C5", "step": "Pick what from the request is worth keeping in the event notes, such as a link, things to bring or a free remark.", "ref": "code_first_model_fallback"},
+      {"id": "C6", "step": "Build the event title following the person's naming habits and the short names of companies, both stored in tables.", "ref": "code"},
+      {"id": "C7", "step": "Before saving, check the calendar, the people, the address of the place from the places table, who gets an invite and whether the time clashes with existing events.", "ref": "code"},
+      {"id": "C8", "step": "Something in the request is unclear or contradicts itself, such as two different times, or the event clashes with a fixed event.", "ref": "person"},
+      {"id": "C9", "step": "Put the finished event into the calendar through the calendar connector.", "ref": "runner"}
+    ]
+  },
+  "email": {
+    "about": "Drafts a reply to an incoming email.",
+    "steps": [
+      {"id": "E1", "step": "Read what the incoming email asks for.", "ref": "model"},
+      {"id": "E2", "step": "Find the sender, the thread and earlier emails with them.", "ref": "code"},
+      {"id": "E3", "step": "If the email asks for a meeting, check which times are free in the calendar.", "ref": "code"},
+      {"id": "E4", "step": "Decide what to answer: accept, decline or suggest another time.", "ref": "person"},
+      {"id": "E5", "step": "Write the text of the reply.", "ref": "model"},
+      {"id": "E6", "step": "Fill in the dates, links, addresses and names in the draft.", "ref": "code"},
+      {"id": "E7", "step": "Check that every date and name in the draft matches the email and the stored data.", "ref": "code"},
+      {"id": "E8", "step": "Save the draft.", "ref": "runner"},
+      {"id": "E9", "step": "Send the reply.", "ref": "person"}
+    ]
+  }
+}

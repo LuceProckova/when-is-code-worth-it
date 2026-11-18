@@ -1,8 +1,6 @@
-"""Score run logs against gold and write the thesis statistics.
+"""score run logs against gold, write thesis stats
 
-Usage: python analyse.py --gold gold.csv --requests ../10-Test-Data/requests.csv log1.jsonl [log2.jsonl ...]
-Writes results/summary.md, results/per_field.csv, results/per_option.csv and 3 PNG plots.
-Scoring rules: score_rules.md (same folder).
+Usage: python analyse.py --gold gold.csv --requests ../test-data/requests.csv log1.jsonl [log2.jsonl ...]
 """
 import argparse, csv, json, re, os, unicodedata, collections
 from datetime import datetime
@@ -11,7 +9,7 @@ from scipy.stats import binomtest, wilcoxon, norm
 from dateutil.rrule import rrulestr
 
 FIELDS = ["title", "date", "start", "end", "all_day", "location", "attendees", "calendar", "rrule", "description"]
-# Option letters as defined in Test-set.html section 1. L (duration) is scored through end, W (today) through date.
+# option letters from test set, L scored via end, W via date
 FIELD_LETTER = {"W": "date", "D": "date", "S": "start", "L": "end", "T": "title", "P": "location",
                 "A": "attendees", "N": "description", "C": "calendar", "R": "rrule"}
 ASK_WORDS = {"calendar": ["calendar"], "attendees": ["which", "who", "attendee", "invite"],
@@ -26,12 +24,12 @@ def norm_text(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-PLACES_CSV = "C:/Users/lucyp/Desktop/All-My-Stuff/0-AI-Solutions/08-Master-Interface/03 - My Data/knowledge/thesis/places.csv"
+PLACES_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "knowledge", "thesis", "places.csv")
 PLACE_ADDRESS = None
 
 
 def place_by_address(t):
-    """A place written as its address in the places table counts as that place ("5 Market Street" = "Office", 2.11.26)."""
+    """address from places table counts as that place"""
     global PLACE_ADDRESS
     if PLACE_ADDRESS is None:
         import csv as _csv
@@ -45,7 +43,7 @@ def place_by_address(t):
 
 
 def norm_place(s):
-    """A place as text: "room B204" = "B204", "Vienna to Bratislava" = "Vienna -> Bratislava"."""
+    """room b204 = b204, vienna to bratislava = vienna -> bratislava"""
     t = place_by_address(norm_text(s))
     t = re.sub(r"^(in|at|the|room)\s+", "", t)
     t = re.sub(r"^(in|at|the|room)\s+", "", t)
@@ -63,9 +61,8 @@ PREFIX = re.compile(r"^(maybe\s+)?(\((\w+)\)\s*|temp\s*-\s*(\w+)\s*-\s*|ph\s*-\s
 
 
 def title_parts(t):
-    """(prefix, people, content stems) of a title: "MAYBE (NW) Long breakfast with Martin and the client"."""
     t = unicodedata.normalize("NFKC", str(t or "")).strip()
-    tags = [x.upper() for x in re.findall(r"\((NW|FAB)\)", t, re.I)]   # a company tag counts wherever it stands (4.11.26)
+    tags = [x.upper() for x in re.findall(r"\((NW|FAB)\)", t, re.I)]   # company tag counts wherever it stands
     t = re.sub(r"\s*\((?:NW|FAB)\)\s*", " ", t, flags=re.I).strip()
     m = PREFIX.match(t)
     pre = (re.sub(r"\s+", " ", (m.group(0) if m else "")).strip().casefold() + " " + " ".join("(%s)" % x.lower() for x in tags)).strip()
@@ -80,9 +77,7 @@ NAMES = {"martin", "sam", "jordan", "natalie", "arthur", "mum", "dad", "dana", "
 
 
 def title_same(gold, pred):
-    """Prefix exact; the people named anywhere in the title the same set ("Team lunch" = "Lunch with the team");
-    the other event words free: the two share at least one content word (2.11.26: the key was too harsh for a
-    model that words things its own way; was: one set of words contains the other)."""
+    """prefix exact, same people, share one content word"""
     g, p = title_parts(gold), title_parts(pred)
     if g[0] != p[0]:
         return False
@@ -90,7 +85,7 @@ def title_same(gold, pred):
         rest = PREFIX.sub("", unicodedata.normalize("NFKC", str(t or "")).strip(), count=1).casefold()
         words = {w for w in re.findall(r"[\w']+", rest) if w not in TITLE_STOP}
         names = {w for w in words if w.rstrip("'s") in NAMES and not w.endswith("'s")}
-        if not names:   # "Dinner at Mum's" names Mum, as "Dinner with Mum" does (4.11.26; rule 2.11.26: at Mum's = with Mum)
+        if not names:   # at mum's = with mum
             names = {w[:-2] for w in words if w.endswith("'s") and w[:-2] in NAMES}
         return names, {w[:5] for w in words - names}
     gn, gw = split(gold)
@@ -108,11 +103,11 @@ def emails(v):
 
 def boolish(v):
     if v in (True, "TRUE", "true", "True", 1): return True
-    return False  # None/""/FALSE all mean not all-day
+    return False  # none, empty, false all mean not all day
 
 
 def key_items(text):
-    """Key information a description must keep: links, numbers, codes."""
+    """links, numbers, codes a description must keep"""
     t = str(text or "")
     items = re.findall(r"https?://\S+", t)
     t2 = re.sub(r"https?://\S+", " ", t)
@@ -122,7 +117,7 @@ def key_items(text):
 
 
 def rrule_same(gold, pred, start):
-    day3 = lambda r: re.sub(r"\b(MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*\b", lambda m: m.group(1)[:2], r.upper())   # THU = TH
+    day3 = lambda r: re.sub(r"\b(MON|TUE|WED|THU|FRI|SAT|SUN)[A-Z]*\b", lambda m: m.group(1)[:2], r.upper())   # thu = th
     g, p = day3((gold or "").strip()), day3((pred or "").strip())
     if not g or not p:
         return not g and not p
@@ -142,19 +137,19 @@ def asked_about(asks, field):
 
 
 def score_row(gold, result):
-    """Return dict field -> 0/1/None (None = not scored) plus ask outcome."""
+    """field -> 0/1/none (none = not scored) plus ask outcome"""
     events = (result or {}).get("events") or []
     asks = [str(a) for a in ((result or {}).get("asks") or [])]
     should_ask_row = bool(gold["ask"].strip())
-    clash = bool((gold.get("clash") or "").strip())   # overlaps an existing event: ask "book anyway?", fields still marked (3.11.26)
+    clash = bool((gold.get("clash") or "").strip())   # clash, ask book anyway, fields still marked
     should_ask_any = should_ask_row or clash or any(gold[f] == "ask" for f in FIELDS)
     out = {"asked": int(bool(asks)), "should_ask": int(should_ask_any)}
     out["ask_correct"] = int(bool(asks) == should_ask_any)
-    if should_ask_row:  # contradiction row: only the ask is scored
+    if should_ask_row:  # contradiction row, only ask scored
         out.update({f: None for f in FIELDS})
         out["event"] = int(bool(asks) and asked_about(asks, "start"))
         return out
-    ev = events[0] if events else None   # several events: the fields of the first are still marked one by one (2.11.26)
+    ev = events[0] if events else None   # several events, first still marked field by field
     try:
         start = datetime.fromisoformat(f"{gold['date']}T{gold['start'] or '00:00'}")
     except ValueError:
@@ -182,22 +177,21 @@ def score_row(gold, result):
             out[f] = int(rrule_same(gv, pv, start)) if start else int(gv == (pv or ""))
         elif f == "description":
             kept = key_items(gv) <= key_items(pv) | {re.sub(r"\s", "", x) for x in key_items(pv)}
-            out[f] = int(kept and not (str(gv or "").strip() and not str(pv or "").strip()))   # a note in the key must not be left out (4.11.26)
+            out[f] = int(kept and not (str(gv or "").strip() and not str(pv or "").strip()))   # note in key must not be dropped
     scored = [out[f] for f in FIELDS if out[f] is not None]
     out["extra_events"] = max(len(events) - 1, 0)
-    out["event"] = int(all(scored) and (not asks or should_ask_any) and (bool(asks) or not clash) and len(events) == 1)   # an extra event still makes the request wrong
+    out["event"] = int(all(scored) and (not asks or should_ask_any) and (bool(asks) or not clash) and len(events) == 1)
     return out
 
 
 FLOW_CONDITION = {"thesis-create-events": "code", "thesis-create-events-allmodel": "allmodel"}
-# planned paired comparisons (first is primary): only the pairs whose two conditions are in the logs are run
+# planned pairs, first is primary, only run if both in logs
 PAIRS = [("allmodel", "code"), ("oneprompt72b", "oneprompt7b"), ("oneprompt7b", "allmodel"), ("oneprompt7b", "code"),
          ("claude", "oneprompt72b")]
 
 
 def read_log(path, partial=False):
-    """Request records from a run_tests.py or run_baseline.py log, each with a condition and one energy value.
-    run_tests.py: only repeats that finished with a block line count, so a repeat cut short by a stop is left out."""
+    """request records with condition and energy, unfinished repeats dropped"""
     recs, blocks = [], set()
     for line in open(path, encoding="utf-8"):
         if not line.strip():
@@ -212,7 +206,7 @@ def read_log(path, partial=False):
         if d.get("gpu_joules") is None:
             d["gpu_joules"] = d.get("gpu_joules_net") if d.get("gpu_joules_net") is not None else d.get("gpu_joules_counter")
         recs.append(d)
-    if partial:   # development log only: a run stopped early still shows what it did
+    if partial:   # dev logs only, stopped run still shows what it did
         return recs
     return [d for d in recs if "flow" not in d or (d["flow"], d["rep"]) in blocks]
 

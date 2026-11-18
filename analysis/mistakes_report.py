@@ -1,10 +1,6 @@
-"""Every mistake of one run, with the step it came from (1.11.26).
+"""every mistake of one run with the step it came from
 
-  python mistakes_report.py live/v4.jsonl ../13-Agent-Review-30.10.26/gold-v3-draft.csv ../09-Working-Notes/09-Mistakes-v4.html
-
-Per request with any wrong field or a wrong ask: the request, each wrong field (answer, key) and the trail of that
-field through the steps, so the step that first gave the wrong value is visible (MODEL or CODE). The summary on top
-counts the mistakes per field and per step that first set the value.
+  python mistakes_report.py ../results/<log>.jsonl ../test-data/answer-key.csv mistakes.html
 """
 import collections
 import html
@@ -13,7 +9,7 @@ import sys
 
 import analyse
 
-# where each scored field lives in the steps' outputs, first match wins
+# where each field lives in step outputs, first match wins
 ALIASES = {'title': ['title', 'what'], 'date': ['date', 'day_words', 'day'], 'start': ['start', 'start_words', 'after_event'],
            'end': ['end', 'minutes'], 'all_day': ['allDay', 'all_day'], 'location': ['location', 'where'],
            'attendees': ['attendees', 'people', 'who'], 'calendar': ['calendar'], 'rrule': ['rrule', 'repeat', 'until_words'],
@@ -31,7 +27,7 @@ def show(v):
 
 
 def trail(steps, field):
-    """[(step id, kind, value)] for the steps whose first row has this field (or one of its aliases)."""
+    """[(step id, kind, value)] for steps whose first row has the field or an alias"""
     out = []
     for st in steps:
         rows = st.get('out')

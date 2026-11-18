@@ -1,18 +1,4 @@
-"""Connections: one place for every service the interface and the AI can use.
-
-Two kinds, both described the same way so widgets and PaperTrAIl treat them alike:
-  api  a connector written here in Python (connectors/<name>.py), calling the service directly
-  mcp  an MCP server, started on this computer (stdio) or reached over the web (http)
-
-Each connection is one file in My Data/connections/<id>.json holding what it is, whether it is on,
-and its tools with a permission each:
-  allow  the AI may use it in a flow
-  ask    the AI may use it, but the flow asks you first
-  off    the AI never sees it
-
-Secrets never go into those files. Servers imported from Claude Code are read from ~/.claude.json
-each time they start, so a key changed there is picked up here too.
-"""
+"""connections: every service, api or mcp, tool permission allow / ask / off, no secrets in files"""
 import importlib
 import json
 import os
@@ -49,7 +35,7 @@ def save(c):
 
 
 def secret(cid):
-    """A key typed into Settings > Connections, kept in My Data/secrets.json, never in the connection file."""
+    """key kept in secrets.json, never the connection file"""
     try:
         with open(os.path.join(DATA_DIR, 'secrets.json'), encoding='utf-8') as f:
             return json.load(f).get('connection:' + cid, '')
@@ -85,7 +71,7 @@ READ_WORDS = re.compile(r'(^|[-_.])(get|list|search|read|fetch|find|query|descri
 
 
 def tool_kind(name, ann=None):
-    """Read or write: the server's own hint if it gives one, otherwise the tool's name."""
+    """server hint first, else tool name"""
     ann = ann or {}
     if ann.get('readOnlyHint') is True:
         return 'read'
@@ -103,7 +89,7 @@ def summary(c):
             'tools_total': len(tools), 'tools_on': sum(1 for t in tools.values() if t.get('permission') != 'off')}
 
 
-# ---------- built-in API connectors (connectors/*.py) ----------
+# ---------- built-in api connectors ----------
 
 def builtin_modules():
     d = os.path.join(APP_DIR, 'connectors')
@@ -121,7 +107,7 @@ def builtin_modules():
 
 
 def ensure_builtins():
-    """Every built-in connector gets its file the first time, later starts leave your choices alone."""
+    """file made first time only, later starts keep your choices"""
     have = {c['id'] for c in all_connections()}
     for cid, m in builtin_modules().items():
         if cid not in have:
@@ -132,7 +118,7 @@ def ensure_builtins():
                                         'permission': t.get('default', 'allow')} for t in man['tools']}})
 
 
-# ---------- MCP client: just enough of the protocol to list and call tools ----------
+# ---------- mcp client: just enough to list and call tools ----------
 
 class StdioMCP:
     def __init__(self, spec):
@@ -237,7 +223,7 @@ class HttpMCP:
 
 
 def server_spec(c):
-    """How to reach an MCP server. Imported ones are read fresh from Claude Code's own config."""
+    """imported ones read fresh from claude code config"""
     if c.get('source') == 'Claude Code':
         with open(CLAUDE_CFG, encoding='utf-8') as f:
             spec = (json.load(f).get('mcpServers') or {}).get(c['server_name'])
@@ -257,7 +243,7 @@ def open_mcp(c):
 
 
 def refresh(cid):
-    """Ask the service what it can do. New tools come in switched off for the AI, known ones keep your setting."""
+    """new tools come in off, known ones keep their setting"""
     c = load(cid)
     try:
         if c['via'] == 'api':
@@ -272,7 +258,6 @@ def refresh(cid):
                 res = cli.request('tools/list')
             finally:
                 cli.close()
-            # a server you have not looked at yet gives the AI nothing: every new tool comes in off
             found = {t['name']: {'description': (t.get('description') or '').strip(), 'input': t.get('inputSchema', {}),
                                  'kind': tool_kind(t['name'], t.get('annotations')), 'default': 'off'} for t in res.get('tools', [])}
             c['status'] = 'connected'
@@ -289,7 +274,7 @@ def refresh(cid):
 
 
 def import_claude_code():
-    """Every MCP server Claude Code knows about becomes a connection here (off for the AI until you look)."""
+    """every claude code mcp server becomes a connection, off till you look"""
     with open(CLAUDE_CFG, encoding='utf-8') as f:
         servers = json.load(f).get('mcpServers') or {}
     have = {c.get('server_name') for c in all_connections() if c.get('source') == 'Claude Code'}
@@ -321,7 +306,7 @@ def set_enabled(cid, on):
 
 def set_permission(cid, tool, perm):
     c = load(cid)
-    # '*' is every tool, '*read' and '*write' one group
+    # '*' all tools, '*read' / '*write' one group
     if tool in ('*', '*read', '*write'):
         names = [n for n, t in c.get('tools', {}).items() if tool == '*' or t.get('kind') == tool[1:]]
     else:
@@ -339,7 +324,7 @@ def remove(cid):
 
 
 def tools_for_ai():
-    """What a flow may use: every tool of a switched-on connection whose permission is not off."""
+    """every tool not off on a switched on connection"""
     out = []
     for c in all_connections():
         if not c.get('enabled', True):
@@ -352,7 +337,7 @@ def tools_for_ai():
 
 
 def call(cid, tool, args):
-    """Run one tool, whichever way the connection goes. Refuses what is switched off."""
+    """refuses what is switched off"""
     c = load(cid)
     if not c.get('enabled', True):
         raise PermissionError(c['name'] + ' is switched off')

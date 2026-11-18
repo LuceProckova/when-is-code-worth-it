@@ -1,19 +1,18 @@
-"""Code steps for the calendar flows. No model anywhere in here: dates, calendars and travel buffers
-are worked out the same way every time, from the calendar area's tables in My Data/knowledge/calendar:
+"""calendar steps, no model, same answer every time from the tables in knowledge/calendar
 
   calendars.csv     calendar, keywords, use (yes / no / travel)
   places.csv        place, also_written_as, address
   travel-times.csv  from, to, minutes, seen, source
   settings.csv      setting, value
 
-Each step is fn(value, ctx): value is the step's input, ctx everything the flow has so far.
+each step is fn(value, ctx)
 """
 import csv
 import os
 import re
 from datetime import date, datetime, timedelta
 
-KNOW = None   # set by papertrail: My Data/knowledge
+KNOW = None   # set by papertrail
 AREA = 'calendar'
 DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september',
@@ -24,7 +23,7 @@ def now():
     return datetime.now()
 
 
-# ---------- the calendar area's tables ----------
+# ---------- tables ----------
 
 def table_path(name):
     return os.path.join(KNOW, AREA, name + '.csv')
@@ -39,7 +38,7 @@ def read_table(name):
 
 
 def write_table(name, header, rows):
-    """Saved with a BOM so Excel opens the accents (Komenského) correctly."""
+    """bom so excel shows the accents"""
     with open(table_path(name), 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=header)
         w.writeheader()
@@ -51,7 +50,6 @@ def split_list(v):
 
 
 def cfg():
-    """All four tables in the shape the steps use."""
     st = {r['setting']: r['value'] for r in read_table('settings')}
     cals = read_table('calendars')
     places = read_table('places')
@@ -72,15 +70,14 @@ def cfg():
 
 
 def load_rules(_, ctx):
-    """First step: the tables, and the calendar names the model may pick from."""
+    """first step, also the calendar names the model may pick"""
     c = cfg()
     ctx['calendar_names'] = ', '.join(n for n in c['calendars'] if n != c['travel_calendar'])
     return {'calendars': len(c['calendars']), 'places': len(set(c['place_spelling'].values())), 'home': c['home']}
 
 
 def spell(text):
-    """Her spelling of places, e.g. park is always Aupark. One pass, longest first, so
-    "la putika" never turns into "La La Putika"."""
+    """one pass longest first so la putika never doubles up"""
     if not text:
         return text
     sp = cfg()['place_spelling']
@@ -90,7 +87,6 @@ def spell(text):
 
 
 def make_title(events, ctx):
-    """The title, built from the pieces the model found and the patterns in naming.csv."""
     pats = {r['rule']: r['pattern'] for r in read_table('naming')}
     said = (ctx.get('input') or '').lower()
     out = []
@@ -103,7 +99,7 @@ def make_title(events, ctx):
         what = what[:1].upper() + what[1:]
         who = e.get('who') or ''
         who = ' and '.join(w.strip() for w in who if w.strip()) if isinstance(who, list) else who.strip()
-        if who:   # the names go after "with" once, not inside what as well
+        if who:   # names after with once, not in what too
             what = re.sub(r'\s+with\s+.*$', '', what, flags=re.I).strip() or what
         t = pats.get('with_who', '{What} with {who}') if who else pats.get('plain', '{What}')
         title = t.replace('{What}', what).replace('{who}', who)
@@ -123,7 +119,7 @@ def make_title(events, ctx):
     return out
 
 
-# ---------- travel table: learnt from the calendar, and from your answers ----------
+# ---------- travel table ----------
 
 TRAVEL_HEADER = ['from', 'to', 'minutes', 'seen', 'source']
 
@@ -144,8 +140,7 @@ def norm_place(p):
 
 
 def learn_travel(existing, ctx):
-    """Every 'A -> B' event already in the calendar teaches how long A to B takes. Newest wins,
-    except a time you gave yourself, which the calendar never overwrites."""
+    """learn routes from a -> b buffers, newest wins, never over a time she gave"""
     table = load_travel()
     learnt = 0
     evs = existing.get('events', []) if isinstance(existing, dict) else (existing or [])
@@ -168,14 +163,13 @@ def learn_travel(existing, ctx):
 
 
 def save_route(route, minutes):
-    """An answer you gave once, kept for good."""
     table = load_travel()
     table[route] = {'minutes': int(minutes), 'seen': date.today().isoformat(), 'source': 'you'}
     save_travel(table)
 
 
 class NeedAnswer(Exception):
-    """The flow stops and asks you, the answers are saved and the request runs again."""
+    """flow stops and asks, answers saved, request reruns"""
     def __init__(self, questions):
         super().__init__('waiting for you')
         self.questions = questions
@@ -185,18 +179,18 @@ ADDRESS = re.compile(r'\d|,')
 
 
 def is_address(p):
-    """A real address (a number or a comma in it) goes to Maps, a short name like Aupark is looked up or asked."""
+    """number or comma means real address, goes to maps"""
     return bool(p and ADDRESS.search(p))
 
 
 def maps_minutes(a, b, leave):
-    """Travel time from Google Maps with traffic at the time of leaving, plus Leo's 15 minutes. None if Maps is not set up."""
+    """maps time with traffic plus padding, none if maps not set up"""
     try:
         import connections
         adr = cfg()['address']
         r = connections.call('google-maps', 'travel_time', {'origin': adr.get(a.lower(), a), 'destination': adr.get(b.lower(), b), 'depart_at': leave})
         pad = cfg().get('maps_padding_minutes', 15)
-        return int(-(-(r['minutes'] + pad) // 5) * 5)   # rounded up to 5 minutes
+        return int(-(-(r['minutes'] + pad) // 5) * 5)   # round up to 5 min
     except Exception:
         return None
 
@@ -209,13 +203,13 @@ def travel_minutes(a, b):
     return None
 
 
-# ---------- dates: "next friday", "in 10 days", "24.10.", "tomorrow" ----------
+# ---------- dates ----------
 
 def resolve_day(phrase, today=None):
     p = (phrase or '').strip().lower()
     today = today or now().date()
     if now().strftime('%H:%M') < cfg().get('tomorrow_means_today_before', '05:00') and p == 'tomorrow':
-        return today   # her midnight rule: still the night before
+        return today   # before 5am tomorrow still means today
     if not p or p == 'today':
         return today
     if p == 'tomorrow':
@@ -247,7 +241,7 @@ def resolve_day(phrase, today=None):
     if m:
         wd = next((i for i, n in enumerate(DAYS) if n.startswith(m.group(2)[:3])), None)
         if wd is not None:
-            # "friday" and "this friday" can be today, "next friday" never is
+            # this friday can be today, next friday never
             ahead = (wd - today.weekday()) % 7
             if m.group(1) == 'next ' and ahead == 0:
                 ahead = 7
@@ -269,7 +263,7 @@ def hhmm(t):
 
 
 def resolve_dates(events, ctx):
-    """The model only says which day in words, code turns it into a date and fills a missing end."""
+    """model says the day in words, code makes the date"""
     out, asks = [], []
     for e in events or []:
         e = dict(e)
@@ -277,7 +271,7 @@ def resolve_dates(events, ctx):
         start = hhmm(e.get('start'))
         said = (ctx.get('input') or '').lower()
         if not start and not any(w in said for w in ('all day', 'all-day', 'whole day')):
-            # no time said and not all day: ask rather than guess
+            # no time and not all day: ask, never guess
             asks.append({'type': 'add', 'text': 'What time is %s on %s?' % (e.get('title') or e.get('what'), e['date']),
                          'placeholder': 'e.g. 10:00 till 11:00'})
             continue
@@ -295,9 +289,7 @@ def resolve_dates(events, ctx):
 
 
 def pick_calendar(events, ctx):
-    """Which calendar, decided by code, never by the model: a calendar named in the request
-    ("on Friends"), else a keyword from calendars.csv in what, who or where, else ask once and
-    save the keyword. Never a calendar marked no. Places get her spelling here too."""
+    """named calendar, else keyword, else ask once, never a no calendar"""
     c = cfg()
     never = set(c.get('never_use', []))
     cals = [x for x in (ctx.get('calendars') or []) if x['id'] not in never and not x.get('ro')
@@ -324,7 +316,7 @@ def pick_calendar(events, ctx):
 
 
 def save_calendar_keyword(keyword, calendar):
-    """Your answer to "which calendar", kept as a keyword so it is never asked again."""
+    """kept as keyword so never asked again"""
     rows = read_table('calendars')
     for r in rows:
         if r['calendar'].strip().lower() == calendar.strip().lower():
@@ -339,13 +331,11 @@ ONLINE = re.compile(r'online|teams|zoom|google meet|meet\.google|webex|https?://
 
 
 def is_place(loc):
-    """A real place to travel to, not an online meeting link."""
     return bool(loc and loc.strip()) and not ONLINE.search(loc)
 
 
 def add_travel(events, ctx):
-    """A buffer there and back for every event with a place, from the travel table.
-    Where she comes from is the place of the event before it that day, else Home."""
+    """buffer there and back, from = event before it that day else home"""
     existing = day_events(ctx)
     conf = cfg()
     BUFFER_CALENDAR, HOME = conf['travel_calendar'], conf['home']
@@ -356,14 +346,14 @@ def add_travel(events, ctx):
         dest = (e.get('location') or '').strip()
         if not is_place(dest) or e.get('allDay') or e.get('online'):
             continue
-        # a buffer's location is where she ends up, so buffers count as places too
+        # buffer location is where she ends up so it counts as a place
         day = [x for x in existing if (x.get('start') or '')[:10] == e['date'] and is_place(x.get('location'))]
         before = [x for x in day if x['end'][11:16] <= e['start']]
         after = [x for x in day if x['start'][11:16] >= e['end']]
         base = day_base(e['date'])
         frm = before[-1]['location'] if before else base.get('wakes_at') or HOME
         back = after[0]['location'] if after else base.get('sleeps_at') or HOME
-        # a place block (your workday) around the event says where you physically are
+        # place block around it (workday) is where she really is
         def at(t):
             for x in day_events(ctx, e['date']):
                 if booking_type(x)[0] == 'place' and x['start'][11:16] <= t <= x['end'][11:16]:
@@ -401,11 +391,10 @@ def add_travel(events, ctx):
     return out
 
 
-# ---------- how long: said, known from durations.csv, or asked once ----------
+# ---------- how long ----------
 
 def fill_length(events, ctx):
-    """End time said? Done. A length said? Use it. Otherwise the usual length of this activity from
-    durations.csv, and if it is not there yet, ask once and remember."""
+    """end said, length said, usual from durations, else ask once"""
     known = {r['activity'].lower(): int(r['minutes']) for r in read_table('durations') if r.get('minutes', '').isdigit()}
     out, asks = [], []
     for e in events or []:
@@ -436,16 +425,16 @@ def save_duration(activity, minutes):
     write_table('durations', ['activity', 'minutes', 'source'], sorted(rows, key=lambda r: r['activity']))
 
 
-# ---------- already booked: free, inside something that allows it, or ask ----------
+# ---------- already booked ----------
 
 def booking_type(ev):
-    """fixed, flexible or container, from booking-types.csv. Unknown means fixed until you say otherwise."""
+    """unknown counts as fixed"""
     title, cal = (ev.get('title') or '').lower(), (ev.get('cal') or '').strip().lower()
     for r in read_table('booking-types'):
         m = r['match'].strip().lower()
         if (r['by'] == 'calendar' and m == cal) or (r['by'] == 'title' and m and m in title):
             return r['type'], r
-    # a block of four hours or more is somewhere you are (a workday), things go inside it
+    # 4h+ block is a place (workday), things go inside
     try:
         if not ev.get('allDay') and (datetime.fromisoformat(ev['end']) - datetime.fromisoformat(ev['start'])).total_seconds() >= 4 * 3600:
             return 'place', None
@@ -455,14 +444,13 @@ def booking_type(ev):
 
 
 def day_events(ctx, date=None):
-    """The events read for the day (the "What is on that day" step), optionally one date only."""
     evs = ctx.get('day') or []
     evs = evs.get('events', []) if isinstance(evs, dict) else evs
     return [x for x in evs if not date or (x.get('start') or '')[:10] <= date <= (x.get('end') or '')[:10]]
 
 
 def day_base(date):
-    """Where she wakes up and where she sleeps on that weekday, from day-base.csv (rows can expire)."""
+    """where she wakes and sleeps that weekday, rows can expire"""
     wd = DAYS[datetime.strptime(date, '%Y-%m-%d').weekday()]
     for r in read_table('day-base'):
         if r['weekday'].lower() == wd and (not r.get('until') or date <= r['until']):
@@ -471,8 +459,7 @@ def day_base(date):
 
 
 def check_clash(events, ctx):
-    """Is she free then? Overlaps that are not hers, containers (a blocker) and
-    her own placeholders (TEMP, PH, Me Time) do not stop anything. A fixed or unknown one asks."""
+    """not hers, containers and placeholders never block, fixed or unknown asks"""
     said = (ctx.get('input') or '').lower()
     out, asks, notes, seen = [], [], ctx.setdefault('clash_notes', []), []
     for e in events or []:
@@ -485,7 +472,7 @@ def check_clash(events, ctx):
             kind, _ = booking_type(x)
             span = '%s %s-%s' % (x['title'], x['start'][11:16], x['end'][11:16])
             if kind in ('container', 'place', 'not_mine') or 'lunch' in x['title'].lower():
-                continue   # not hers, fine inside, or lunch, which the routine check handles
+                continue   # lunch is the routine check's job
             if kind == 'flexible':
                 n = '%s overlaps %s, which can move' % (e['title'], span)
                 if n not in notes:
@@ -496,7 +483,7 @@ def check_clash(events, ctx):
                                          {'label': 'Things can always go inside "%s"' % x['title'], 'add': 'book anyway', 'save': 'container'},
                                          {'label': 'Do not book', 'stop': True}]})
         out.append(e)
-        # only what could really stop it counts in the answer, each name once
+        # only real blockers, each name once
         real = list(dict.fromkeys(x['title'] for x in hits if booking_type(x)[0] not in ('container', 'place', 'not_mine')
                                   and 'lunch' not in x['title'].lower()))
         if not real:
@@ -512,7 +499,7 @@ def check_clash(events, ctx):
 
 
 def free_slot(ctx, date, minutes, window, avoid):
-    """The first gap of that length inside the window, around everything already on the day and the new events."""
+    """first gap of that length in the window"""
     a, b = window.split('-')
     busy = [(x['start'][11:16], x['end'][11:16]) for x in day_events(ctx, date)
             if not x.get('allDay') and 'lunch' not in x['title'].lower() and booking_type(x)[0] not in ('container', 'not_mine')
@@ -529,7 +516,7 @@ def free_slot(ctx, date, minutes, window, avoid):
 
 
 def check_routine(events, ctx):
-    """Does it push out lunch? If you are already moving lunch that day, fine. Otherwise offer the next free slot."""
+    """lunch pushed out: fine if moving it, else offer next free slot"""
     st = {r['setting']: r['value'] for r in read_table('settings')}
     mins, window = int(st.get('lunch_minutes') or 45), st.get('lunch_window') or '11:30-14:30'
     said = (ctx.get('input') or '').lower()
@@ -560,7 +547,7 @@ def check_routine(events, ctx):
 
 
 def sort_activities(rows, ctx):
-    """Each column is one activity: new events go down the create checks, moves go to the move path."""
+    """creates go down the checks, moves go to the move path"""
     rows = rows or []
     ctx['moves'] = [r for r in rows if r.get('action') == 'move']
     creates = [r for r in rows if r.get('action') != 'move']
@@ -569,7 +556,7 @@ def sort_activities(rows, ctx):
 
 
 def find_moves(moves, ctx):
-    """Find the event each move is about on that day, and work out its new time, keeping its length."""
+    """new time keeps the old length"""
     out, asks = [], []
     for m in moves or []:
         want = norm_place(m.get('what'))
@@ -589,14 +576,14 @@ def find_moves(moves, ctx):
     if asks:
         raise NeedAnswer(asks)
     if out:
-        ctx.setdefault('approved', set()).add('update_event')   # you asked for these moves yourself
+        ctx.setdefault('approved', set()).add('update_event')   # she asked for these moves
     ctx['to_update'] = out
     ctx['_note'] = '; '.join('%s %s moves to %s' % (u['title'], u['was'], u['start']) for u in out) or 'Nothing to move'
     return out
 
 
 def check_duplicate(events, ctx):
-    """Is it already there? Same title on the same day asks before adding a second one."""
+    """same title same day asks first"""
     said = (ctx.get('input') or '').lower()
     asks = []
     for e in events or []:
@@ -612,8 +599,7 @@ def check_duplicate(events, ctx):
 
 
 def verify_intake(events, ctx):
-    """After grounding: answers to the flow's questions are not activities, a move names the event it moves,
-    and a move with no day of its own is on the day of the rest of the request."""
+    """answers are not activities, a move with no day takes the request's day"""
     said = (ctx.get('input') or '').lower()
     out = []
     for e in events or []:
@@ -630,7 +616,7 @@ def verify_intake(events, ctx):
 
 
 def verify_created(after, ctx):
-    """Read the day back: is every event really there, at the right time?"""
+    """read day back, every event there at right time"""
     if ctx.get('dry'):
         ctx['_note'] = 'Test run, nothing to read back'
         return {'checked': 'test run'}
@@ -648,7 +634,7 @@ def save_booking_type(match, kind):
     write_table('booking-types', ['match', 'by', 'type', 'note'], rows)
 
 
-# ---------- why and priority go into the notes ----------
+# ---------- notes ----------
 
 def add_notes(events, ctx):
     out = []

@@ -1,11 +1,6 @@
-"""Checks the Zeus energy counter against integrated power polling before any real run.
+"""zeus counter vs polled power, counter primary if within 5 %
 
   python calibrate_energy.py [--idle 30] [--load 30] [--app ...]
-
-Two phases: idle with the model resident, then load (one request looped through the model). In each phase the
-counter is read at start and end, Zeus power is polled every 50 ms and integrated, and nvidia-smi power.draw is
-polled every 100 ms in parallel. Writes calibration.json with the joules per instrument and the verdict:
-counter primary if counter and Zeus poll agree within 5 %, otherwise the poll is primary.
 """
 import argparse
 import json
@@ -62,7 +57,7 @@ def phase(name, seconds, gpu, smi, load):
     if load:
         th = threading.Thread(target=load_loop, args=(stop,), daemon=True)
         th.start()
-        time.sleep(2)   # let the first request start
+        time.sleep(2)   # let first request start
     st0, e0, t0 = pv.gpu_state(), gpu.counter(), time.perf_counter()
     time.sleep(seconds)
     t1, e1, st1 = time.perf_counter(), gpu.counter(), pv.gpu_state()

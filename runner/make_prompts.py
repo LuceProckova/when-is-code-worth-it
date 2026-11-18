@@ -1,12 +1,9 @@
-"""One rulebook, three uses (1.11.26). Writes the prompts of the all-model flow (version 3) and the one-prompt
-"custom agent" prompt (versions 1, 2 and Claude) from the same rule texts, so every version knows exactly the
-rules the code steps of version 4 apply. Only who applies them differs: the model, or code.
+"""one rulebook for every version: all-model flow and one-prompt baseline from the same rule texts
 
   python make_prompts.py            writes both, prints what changed
   python make_prompts.py --check    exits 1 if the files on disk differ from what this script would write
 
-Each rule block mirrors one code function in 02 - App/steps/thesis.py (named above the block). Change a rule in
-the code, change it here, rerun. Intake, pick and notes are model steps in both flows and stay identical.
+each rule block mirrors the code function named above it, change both and rerun
 """
 import argparse
 import json
@@ -14,7 +11,7 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-APP_DATA = r'C:\Users\lucyp\Desktop\All-My-Stuff\0-AI-Solutions\08-Master-Interface\03 - My Data'
+APP_DATA = os.path.join(os.path.dirname(HERE), 'data')
 CODE_FLOW = os.path.join(APP_DATA, 'workflows', 'thesis-create-events.json')
 ALL_FLOW = os.path.join(APP_DATA, 'workflows', 'thesis-create-events-allmodel.json')
 BASELINE = os.path.join(HERE, 'baseline_prompt.txt')
@@ -171,7 +168,7 @@ Answer as JSON {"result": [ ... ]}. The top-level key must be exactly "result".'
 
 
 def intake_slots(code_flow):
-    """The intake prompt of the code flow from its slot list to the end of the slots, reused word for word."""
+    """intake slots of the code flow, reused word for word"""
     p = next(s for s in code_flow['steps'] if s['id'] == 'read')['prompt']
     a = p.index('what:')
     b = p.index('Tables,')
@@ -179,8 +176,7 @@ def intake_slots(code_flow):
 
 
 def one_prompt_slots(code_flow):
-    """The intake slots for the one-prompt version, without the intake's internal day object forms: one prompt
-    answers with real dates, so it must never be taught to write {"kind": ...} objects."""
+    """no day objects here, one prompt must write real dates"""
     out, skip = [], False
     for line in intake_slots(code_flow).split('\n'):
         if line.startswith('day:'):
@@ -194,8 +190,8 @@ def one_prompt_slots(code_flow):
 
 
 def baseline(code_flow):
-    """The one-prompt version: every rule of every step in one instruction, like a custom agent."""
-    def esc(s):   # str.format in run_baseline.py: literal braces doubled
+    """every rule in one instruction, like a custom agent"""
+    def esc(s):   # run_baseline.py uses str.format, braces doubled
         return s.replace('{', '{{').replace('}', '}}')
     pick = next(s for s in code_flow['steps'] if s['id'] == 'pick')['prompt']
     pick_rule = pick[pick.index('calendar:'):pick.index('Calendars (')].strip()
@@ -229,15 +225,12 @@ def baseline(code_flow):
              'Everyone else is in the title only, never in attendees.\n'
              '4. Two people with the same name: the one whose calendar is the event\'s calendar.\n'
              '5. Date: the weekday of the date you wrote is the weekday the request says.')
-    # 4.11.26: "shorten it, make it as clear and understandable as possible". The one prompt is now written by hand
-    # in one_prompt.txt (same rules, numbered steps in working order); the generated text above is kept for reference only.
-    return open(os.path.join(HERE, 'one_prompt.txt'), encoding='utf-8').read()
+    # one prompt now handwritten in one_prompt.txt, generated text above kept for reference
+    return open(os.path.join(os.path.dirname(HERE), 'one-prompt', 'baseline_prompt.txt'), encoding='utf-8').read()
 
 
-# ---------- version 3, cut for a small model (1.11.26) ----------
-# Version 3 first borrowed version 4's steps, where some steps do four jobs that code handles easily. A model-only
-# workflow has to be cut for what a small model can do: one small decision per step, each step with only the rule
-# and the table it needs. Plain code only carries the rows from step to step (merge by row number).
+# ---------- version 3, cut for a small model ----------
+# one small decision per step, only its rule and table, code just merges rows
 
 def _rule_lines(text, starts):
     return '\n'.join(l for l in text.split('\n') if any(l.startswith(s) for s in starts))
@@ -420,7 +413,7 @@ def native_steps(code):
     start_rules = '\n'.join(l for l in when_lines if not l.startswith(('- End:', '- end_date', '- An end earlier', '- No start')))
     end_rules = '\n'.join(l for l in when_lines if l.startswith(('- End:', '- end_date', '- An end earlier')))
 
-    spec = [   # id, title, out field(s), question and rules, tables, needs
+    spec = [   # id, title, out fields, rules, tables, needs
         ('words', 'What is the event?', ['own_event', 'said', 'fixes', 'what'],
          'What is the event, in the request\'s own words? Only the few words that name the event: stop before "with", "at", "on", "in", "for", "from", "every", a day or a time. Examples: "Set up meetign with Jordan next Tuesday from 10 to 11" gives "meeting"; "Schedule finally go through the thesis results with fresh eyes" gives "go through the thesis results"; "Add uh the deadline thing, the report or whatever" gives "deadline".\n' + what_rule + '\n- A row that is not an event of its own (a reminder like "the day before", a door code, a note, a bring list, or a second row for the same event) gets only {"row": n, "drop": true}.',
          ['thesis/speech-fixes', 'thesis/abbreviations'], {}),
@@ -459,10 +452,10 @@ def native_steps(code):
     steps = [dict(intake)]
     prev = 'events'
     for i, (sid, title, fields, rules, uses, needs) in enumerate(spec):
-        rules = CLEAR.get(sid, rules)   # the short, clear version of the same rules (1.11.26)
-        if set(fields) & {'start', 'end', 'from'}:   # else qwen starts writing "2026-11-07T12:00" and the time pattern cuts it to "20:00" (2.11.26)
+        rules = CLEAR.get(sid, rules)   # short clear version of the same rules
+        if set(fields) & {'start', 'end', 'from'}:   # else qwen puts the date in and the time pattern cuts it wrong
             rules += '\nTimes are only hours and minutes, like "13:30", never with the date.'
-        if 'date' in fields:   # else "14 November" starts as "14..." and the date pattern bends it into "1411-20-26" (2.11.26)
+        if 'date' in fields:   # else qwen starts day first and the pattern mangles it
             rules += '\nThe date is written year first: <year>-<month>-<day>, never the day first.'
         if sid in WORKING:
             fields = ['working'] + fields
@@ -473,14 +466,14 @@ def native_steps(code):
             prev, rules, ', '.join('"%s"' % f for f in fields), '\n\nTables:\n{knowledge}' if uses else '', shape, out)
         steps.append({'id': sid, 'title': title, 'kind': 'model', 'in': prev, 'out': out, 'merge': prev, 'uses': uses,
                       'reads': ['input', 'today'], 'asks': sid in ('words', 'date', 'start', 'check'), 'needs': needs,
-                      'shows': fields, 'prompt': prompt, 'may_be_empty': True})   # nothing to add: the row carries on unchanged
+                      'shows': fields, 'prompt': prompt, 'may_be_empty': True})   # nothing to add, row carries on
         prev = out
     return steps
 
 
 CALENDARS = None
-VIEWS = {'words': ['what'], 'people': [], 'company': ['what', 'people', 'calendar'], 'maybe': [],   # later steps see only what earlier version 3 steps decided,
-         'title': ['what', 'people', 'company', 'maybe'], 'date': [],    # never intake's guesses: they read the request itself
+VIEWS = {'words': ['what'], 'people': [], 'company': ['what', 'people', 'calendar'], 'maybe': [],   # later steps see only earlier v3 decisions, never intake guesses
+         'title': ['what', 'people', 'company', 'maybe'], 'date': [],
          'start': ['what', 'date'], 'end': ['what', 'date', 'start', 'allDay'], 'repeat': ['date'], 'place': [],
          'calendar': ['what', 'people'], 'invite': ['people', 'calendar'], 'notes': [], 'check': ['what', 'date', 'start', 'end', 'allDay']}
 DATE = {'type': 'string', 'pattern': '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'}
@@ -496,7 +489,7 @@ def field_schema(f):
     if f in ('allDay', 'maybe', 'drop', 'is_work', 'two_times', 'confirm_first', 'need_ask', 'client', 'two_times'):
         return {'type': 'boolean'}
     if f == 'company':
-        return {'type': 'string', 'enum': ['none', 'FAB', 'NW']}   # qwen will not write an empty answer: "" became "NW" (3.11.26)
+        return {'type': 'string', 'enum': ['none', 'FAB', 'NW']}   # qwen won't write empty, "" turned into NW
     if f == 'calendar':
         names = [r['calendar'] for r in csv.DictReader(open(os.path.join(os.path.dirname(os.path.dirname(CODE_FLOW)), 'knowledge', 'thesis', 'calendars.csv'), encoding='utf-8-sig'))]
         return {'type': 'string', 'enum': names}
@@ -543,17 +536,16 @@ def field_schema(f):
 
 def step_schema(out, fields):
     props = {'row': {'type': 'integer'}}
-    props.update({f: field_schema(f) for f in fields})   # working (if any) comes first, so the model writes it before the answer
+    props.update({f: field_schema(f) for f in fields})   # working first so model writes it before the answer
     props.update({'ask': {'type': 'string'}, 'drop': {'type': 'boolean'}})
-    return {'type': 'object', 'properties': {out: {'type': 'array', 'minItems': 1,   # never an empty answer: every step answers for the row,
-                                                   'items': {'type': 'object', 'properties': props, 'required': ['row'] + list(fields)}}},   # its fields filled
+    return {'type': 'object', 'properties': {out: {'type': 'array', 'minItems': 1,   # never empty, every step answers each row
+                                                   'items': {'type': 'object', 'properties': props, 'required': ['row'] + list(fields)}}},
             'required': [out]}
 
 
 def baseline_schema():
-    """The one-prompt answer's fixed shape (structured outputs): typed fields, Alex's calendar names, dates and times as patterns."""
-    # 4.11.26: "people" comes first, so the model copies each named person's people-table row before it writes
-    # title (company), calendar and attendees (invite) from it
+    """one-prompt answer shape for structured outputs"""
+    # people first so model copies their rows before title, calendar, attendees
     ev = {'people': {'type': 'array', 'items': {'type': 'object', 'properties': {'said': {'type': 'string'}, 'row': {'type': 'string'}},
                                                  'required': ['said', 'row']}}}
     ev.update({f: field_schema(f) for f in ('title', 'date', 'end_date', 'start', 'end', 'allDay', 'location', 'attendees', 'calendar', 'rrule', 'desc', 'reminder_minutes')})
@@ -567,7 +559,7 @@ def build():
     code = json.load(open(CODE_FLOW, encoding='utf-8'))
     allm = json.load(open(ALL_FLOW, encoding='utf-8'))
     tail = [x for x in allm['steps'] if x['id'] in ('ask', 'create')]
-    allm['steps'] = native_steps(code) + tail   # version 3 cut for a small model, then the same Ask and Put it in steps
+    allm['steps'] = native_steps(code) + tail   # v3 steps then the same ask and create steps
     for x in tail:
         x['after'] = ['check']
     allm['description'] = ('the thesis test version of create events, all-model condition: cut for a small model, one small decision per step '
@@ -577,17 +569,17 @@ def build():
     for s in allm['steps']:
         if s['id'] in new and 'r_' not in str(s.get('out')) and s['id'] != 'check':
             s['prompt'] = new[s['id']]
-        elif s['id'] in same and ('r_' not in str(s.get('out')) or s['id'] == 'notes'):   # intake and notes stay identical in both flows
+        elif s['id'] in same and ('r_' not in str(s.get('out')) or s['id'] == 'notes'):
             s['prompt'] = same[s['id']]
         if s['id'] in ('when', 'repeat', 'check'):
             s['reads'] = sorted(set(s.get('reads') or []) | {'input'})
         merge = {'when': 'events', 'repeat': 'dated', 'title': 'repeated', 'check': 'named'}   # answers only its own fields
         if s['id'] in merge:
             s['merge'] = merge[s['id']]
-    for x in allm['steps']:   # version 3 steps each merge into the rows of the step before them
+    for x in allm['steps']:   # v3 steps merge into the step before
         if x.get('kind') == 'model' and x.get('in'):
             x['merge'] = x['in']
-        if x['id'] in VIEWS:   # each step sees only the fields it needs, and answers in a fixed shape (structured outputs)
+        if x['id'] in VIEWS:   # only needed fields in, fixed shape out
             x['view'] = VIEWS[x['id']]
             x['schema'] = step_schema(x['out'], x['shows'])
     return allm, baseline(code)
@@ -605,7 +597,7 @@ def main():
         sys.exit(0 if (old_allm == allm_txt and old_base == base) else 1)
     open(ALL_FLOW, 'w', encoding='utf-8', newline='\n').write(allm_txt)
     open(BASELINE, 'w', encoding='utf-8', newline='\n').write(base)
-    json.dump(baseline_schema(), open(os.path.join(HERE, 'baseline_schema.json'), 'w', encoding='utf-8'), indent=1)
+    json.dump(baseline_schema(), open(os.path.join(os.path.dirname(HERE), 'one-prompt', 'baseline_schema.json'), 'w', encoding='utf-8'), indent=1)
     print('all-model flow:', 'changed' if old_allm != allm_txt else 'same', '| baseline prompt:', 'changed' if old_base != base else 'same',
           '| baseline length', len(base), 'chars')
 

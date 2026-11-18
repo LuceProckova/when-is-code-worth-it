@@ -1,14 +1,4 @@
-"""PaperTrAIl inside the Master Interface: the router, the step runner and the run log.
-
-A request is first split into its jobs. Each job goes to the small local model, which must pick one workflow or answer
-"none". Code checks the answer: a real workflow id runs that workflow, "none" or anything else goes
-to Claude (in auto). Every request is logged to My Data/runs/<date>.jsonl, which is the thesis data.
-
-A workflow is a JSON file in My Data/workflows/. Each step is done by a model, by code or by a human:
-  model  a prompt for the local model, answered as JSON
-  code   a function from CODE_STEPS below
-  human  needs the person (not built yet, the run stops and says so)
-"""
+"""papertrail: router, step runner, run log (runs/<date>.jsonl is the thesis data)"""
 import json
 import re
 import os
@@ -19,7 +9,7 @@ import urllib.request
 
 OLLAMA = 'http://127.0.0.1:11434/api/generate'
 SMALL = 'qwen2.5:7b'
-OLLAMA_OPTIONS = {'temperature': 0, 'seed': 1}   # the thesis runner adds num_ctx so every version gets the same context
+OLLAMA_OPTIONS = {'temperature': 0, 'seed': 1}   # thesis runner adds num_ctx, same context every version
 SKIP = {'.git', 'node_modules', '__pycache__', '$RECYCLE.BIN', 'System Volume Information',
         '.venv', 'venv', 'build', '.history', 'Archive', '00-Archive'}
 
@@ -30,9 +20,7 @@ ROOT = None       # set per request from settings
 # ---------- models ----------
 
 def ask_small(prompt, model=SMALL, fmt=None):
-    """One call to a small model, temperature 0, JSON out. Returns (dict, tokens, ms).
-    fmt: a JSON schema the answer is held to while it is written (structured outputs), else plain JSON.
-    A model added through an API goes to its OpenAI-style endpoint, anything else to Ollama."""
+    """one small model call, returns (dict, tokens, ms), fmt = json schema"""
     api = api_model(model)
     if api:
         return ask_api(prompt, api)
@@ -52,7 +40,7 @@ def ask_small(prompt, model=SMALL, fmt=None):
 
 
 def ask_api(prompt, cfg):
-    """An OpenAI-compatible chat endpoint (OpenAI, Mistral, OpenRouter, a local LM Studio...)."""
+    """any openai compatible chat endpoint"""
     key = load_secrets().get(cfg['name'], '')
     body = json.dumps({'model': cfg['model'], 'temperature': 0, 'response_format': {'type': 'json_object'},
                        'messages': [{'role': 'user', 'content': prompt}]}).encode('utf-8')
@@ -70,7 +58,7 @@ def ask_api(prompt, cfg):
     return out, tokens, ms
 
 
-# ---------- models: the ones on this computer and the ones added through an API ----------
+# ---------- local and api models ----------
 
 def secrets_path():
     return os.path.join(DATA_DIR, 'secrets.json')
@@ -103,8 +91,7 @@ def list_models():
 
 
 def add_model(body):
-    """kind api: name, base_url, model, key (the key goes to secrets.json, never the meta file).
-    kind local: name and the path of a .gguf file, which Ollama imports with ollama create."""
+    """api key goes to secrets.json never meta, local .gguf via ollama create"""
     name = (body.get('name') or '').strip()
     if not name:
         return False, 'give the model a name'
@@ -138,7 +125,7 @@ def add_model(body):
 
 
 def ask_claude(text):
-    """The big brain through the claude CLI, answer only, no file changes (it asks before writes)."""
+    """claude cli, answer only, asks before writes"""
     exe = shutil.which('claude')
     if not exe:
         return {'ok': False, 'answer': 'The claude CLI is not on this computer.'}, 0
@@ -179,10 +166,10 @@ def load_workflows():
     return out
 
 
-# ---------- designing flows: the catalogue, the checks, saving, drafting with Claude ----------
+# ---------- designing flows ----------
 
 def catalog():
-    """Everything a flow can be built from: code steps (with what they do), tools that are on, tables."""
+    """what a flow can be built from"""
     load_code_steps()
     import connections
     code = {n: ((f.__doc__ or '').strip().split('\n')[0]) for n, f in CODE_STEPS.items()}
@@ -195,7 +182,7 @@ def catalog():
 
 
 def check_flow(wf, cat=None):
-    """The double check: what in this flow would not work or does nothing."""
+    """double check: what breaks or does nothing"""
     cat = cat or catalog()
     probs, made, used = [], {'input'} | set(SYSTEM_VARS), set()
     tables = set(cat['tables'])
@@ -239,7 +226,7 @@ def check_flow(wf, cat=None):
 
 
 def save_flow(wf):
-    """Save a flow you edited. The version before goes to Archive, so nothing is lost."""
+    """old version goes to archive first"""
     import shutil as sh
     path = os.path.join(wf_dir(), wf['id'] + '.json')
     if os.path.exists(path):
@@ -252,7 +239,7 @@ def save_flow(wf):
 
 
 def draft_flow(goal):
-    """Claude designs a flow with the decomposition skill, from what exists. It is saved as a draft."""
+    """claude drafts flow with decomposition skill, saved as draft"""
     skill = ''
     try:
         with open(os.path.expanduser('~/.claude/skills/flow-decomposition/SKILL.md'), encoding='utf-8') as f:
@@ -288,7 +275,7 @@ def route_prompt(text, wfs):
 # ---------- code steps ----------
 
 def search_files(term, ctx=None):
-    """Files under the root whose name holds every word of the term, newest first, top 5."""
+    """files with every word in name, newest 5"""
     words = [w for w in (term or '').lower().replace('-', ' ').replace('_', ' ').split() if len(w) > 1]
     if not words:
         return []
@@ -322,7 +309,7 @@ CODE_STEPS = {'search_files': search_files, 'open_first': open_first}
 
 
 def load_code_steps():
-    """Every steps/<area>.py adds its STEPS, so a new area of flows is a new file, nothing else."""
+    """each steps/<area>.py adds its STEPS, new area = new file"""
     import importlib
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'steps')
     for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
@@ -333,7 +320,7 @@ def load_code_steps():
             CODE_STEPS.update(m.STEPS)
 
 
-# ---------- knowledge: rules and tables the flows read (My Data/knowledge) ----------
+# ---------- knowledge ----------
 
 def know_dir():
     d = os.path.join(DATA_DIR, 'knowledge')
@@ -345,7 +332,7 @@ KNOW_TYPES = ('.csv', '.md', '.json', '.txt')
 
 
 def list_knowledge():
-    """Every file in My Data/knowledge, each area a folder, id = area/name without the extension."""
+    """id = area/name without extension"""
     out = []
     for dirpath, _, files in os.walk(know_dir()):
         for n in sorted(files):
@@ -356,7 +343,7 @@ def list_knowledge():
 
 
 def knowledge_folders():
-    """Every folder in My Data/knowledge, empty ones too, so a new folder shows before it has a table."""
+    """empty ones too, new folder shows before it has a table"""
     out = []
     for dirpath, dirs, _ in os.walk(know_dir()):
         for d in sorted(dirs):
@@ -365,7 +352,7 @@ def knowledge_folders():
 
 
 def new_knowledge(folder, name=None):
-    """A new folder, or a new table in a folder, with one header row to start from."""
+    """new folder or new table with header row"""
     folder = re.sub(r'[^\w\- /]', '', (folder or '').strip()).strip('/ ')
     if not folder:
         return False, 'give the folder a name'
@@ -393,12 +380,12 @@ SYSTEM_VARS = {'today': lambda: __import__('datetime').datetime.now().strftime('
 
 
 def system_vars():
-    """Variables that come from the computer, not from a step: each one is a card in the Data column."""
+    """vars from the computer, each a card in data column"""
     return {k: f() for k, f in SYSTEM_VARS.items()}
 
 
 def fill(prompt, text, ctx, uses):
-    """Every {name} in a prompt is a variable: input, a system variable, an earlier step's result, or {knowledge}."""
+    """{name} = input, system var, earlier step result or {knowledge}"""
     out = prompt.replace('{input}', text)
     out = out.replace('{knowledge}', '\n\n'.join(read_knowledge(k) for k in uses or []))
     for k, v in ctx.items():
@@ -410,7 +397,7 @@ def fill(prompt, text, ctx, uses):
 # ---------- runner ----------
 
 def short(v, limit=3000):
-    """What the trail keeps of a step's output: all of it when small, a count and a sample when big."""
+    """small kept whole, big as count + sample"""
     txt = json.dumps(v, ensure_ascii=False)
     if len(txt) <= limit:
         return v
@@ -421,7 +408,7 @@ def short(v, limit=3000):
     return txt[:limit] + '...'
 
 
-# ---------- grounding: every value in an intake table must come from the message ----------
+# ---------- grounding: intake values must be in message ----------
 
 STOP = {'the', 'and', 'for', 'with', 'from', 'that', 'this', 'into', 'onto', 'have', 'will', 'are', 'was', 'you', 'your', 'my', 'our',
         'can', 'please', 'put', 'add', 'book', 'calendar'}
@@ -440,7 +427,7 @@ def _times(text):
 
 
 def words_in(value, text):
-    """Is this value really in the text? Times compare as times, words by their stems, most of them must be there."""
+    """times as times, words by stem, 60% must be there"""
     v = ' '.join(value) if isinstance(value, list) else str(value)
     vt = _times(v)
     if vt and re.fullmatch(r'[\d:.\sapmAPM]+', v.strip()):
@@ -454,10 +441,7 @@ def words_in(value, text):
 
 
 def ground(rows, text, fields):
-    """One rule for every field of every flow. A value the person said must be in the message. A value the
-    model inferred (an action, how often, a priority...) must come with the words it was inferred from,
-    and those words must be in the message. Anything else is cleared. A field can also name a table whose
-    values it may not be (a calendar name is not a place)."""
+    """said = in message, inferred = evidence in message, else cleared"""
     fixes = []
     for r in rows if isinstance(rows, list) else []:
         if not isinstance(r, dict):
@@ -471,10 +455,10 @@ def ground(rows, text, fields):
                 continue
             if spec.get('kind') == 'said':
                 ok = words_in(v, text)
-            else:   # inferred: its own words are in the message, or the words it was inferred from are
+            else:   # inferred: own words or evidence words in message
                 ok = words_in(v, text) or (bool(ev.get(f)) and words_in(ev.get(f), text))
             if not ok and spec.get('type'):
-                ok = said_as_type(v, spec['type'], text)   # said another way: "an hour" is 60 minutes, "Mondays" is weekly
+                ok = said_as_type(v, spec['type'], text)   # "an hour" = 60 min, "mondays" = weekly
             if ok and spec.get('type'):
                 v2 = as_type(v, spec['type'])
                 ok = v2 is not None
@@ -487,7 +471,7 @@ def ground(rows, text, fields):
                 fixes.append('%s "%s" is not in what you wrote' % (f, ' '.join(v) if isinstance(v, list) else v))
                 r[f] = spec.get('default', '')
         r.pop('evidence', None)
-        # the main field holds only the thing itself: words that belong to other fields come out of it
+        # main field keeps only the thing, other fields' words come out
         for f, spec in fields.items():
             if spec.get('main') and isinstance(r.get(f), str):
                 v = r[f]
@@ -506,7 +490,7 @@ REPEAT = re.compile(r'\b(every|each|weekly|daily|monthly|' + WEEKDAY[1:-3] + r')
 
 
 def said_as_type(v, kind, text):
-    """Is this value in the message in another form its type allows?"""
+    """same value said another way"""
     if kind == 'minutes':
         want = as_type(v, 'minutes')
         return want is not None and any(as_type(m.group(1), 'minutes') == want for m in DURATION.finditer(text or ''))
@@ -516,7 +500,7 @@ def said_as_type(v, kind, text):
 
 
 def as_type(v, kind):
-    """The value as its type, or None when it is not that kind of thing at all."""
+    """value as its type, none if not that kind"""
     s = (' '.join(v) if isinstance(v, list) else str(v)).strip().lower()
     if kind == 'day':
         if re.fullmatch(r'(this |next |on )?' + WEEKDAY, s):
@@ -553,7 +537,7 @@ def table_column(table, col):
 
 
 def usable(val, required=None):
-    """An answer is usable when it is there and every row has the fields the flow needs."""
+    """there and every row has required fields"""
     if val in (None, '', []):
         return False
     rows = val if isinstance(val, list) else [val]
@@ -571,14 +555,12 @@ def ask_claude_json(prompt):
 
 
 def run_steps(wf, text, dry=False, extra=None):
-    """Run a workflow step by step, yielding each step's record as soon as it finishes.
-    dry: write tools are not called, the step shows what it would have sent.
-    extra: more variables for the run, e.g. the thesis test row's today."""
+    """yields each step record as it finishes, dry = no write tools"""
     import connections
     load_code_steps()
     ctx = dict(system_vars(), input=text, dry=dry)
     ctx.update(extra or {})
-    if ctx.get('test_today'):   # a test row's today is the run's today, also inside prompts
+    if ctx.get('test_today'):   # test row today = run today, prompts too
         from datetime import datetime as _dt
         ctx['today'] = _dt.strptime(ctx['test_today'], '%Y-%m-%d %H:%M').strftime('%A %Y-%m-%d %H:%M')
     for st in wf['steps']:
@@ -586,17 +568,15 @@ def run_steps(wf, text, dry=False, extra=None):
         rec = {'id': st['id'], 'kind': st['kind'], 'tokens': 0}
         try:
             if st.get('when') and not needed(st, ctx):
-                # only run when there is something to do: a model or code step hands its rows on untouched
+                # nothing to do: code step passes rows on untouched
                 rec.update(ok=True, skipped=True, out='not needed this time', ms=0)
-                ctx[st['out']] = ctx.get(st.get('in')) if st['kind'] == 'code' else None   # a skipped model table (notes, picks) is empty, never the rows it would have read
+                ctx[st['out']] = ctx.get(st.get('in')) if st['kind'] == 'code' else None   # skipped model table is empty, never the rows
                 yield rec
                 continue
             if st['kind'] == 'model':
                 view_ctx = ctx
                 if 'view' in st and isinstance(ctx.get(st.get('in')), list):
-                    # the step sees only the fields it needs from the rows so far, nothing it could grab by mistake.
-                    # "view": [] means the row number only (as in step_lab.py); it used to count as no view at all, so
-                    # people, maybe, date, place and notes saw every earlier field incl. the intake's guesses (2.11.26)
+                    # step sees only its view fields, view [] = row number only
                     view_ctx = dict(ctx, **{st['in']: [{k: r.get(k) for k in ['row'] + st['view'] if k in r} if isinstance(r, dict) else r
                                                        for r in ctx[st['in']]]})
                 prompt = fill(st['prompt'], text, view_ctx, st.get('uses'))
@@ -604,43 +584,40 @@ def run_steps(wf, text, dry=False, extra=None):
                 val = out.get(st['out'])
                 rec.update(tokens=tok, model=SMALL)
                 if not usable(val, st.get('required')) and st.get('fallback') == 'claude':
-                    # the small model could not do it: the big one gets the same question once
+                    # small model failed, claude gets same question once
                     val = ask_claude_json(prompt).get(st['out'])
                     rec.update(model='claude', fell_back=True)
                 if not usable(val, st.get('required')):
                     if not st.get('may_be_empty'):
                         raise ValueError('the model gave no usable ' + st['out'])
-                    val = []   # an extra like notes: nothing usable is not a failure, the event goes on without it
+                    val = []   # optional extra like notes, empty is fine
                 fixes = []
                 if st.get('fields'):
                     val, fixes = ground(val, text, st['fields'])
                 if st.get('merge'):
-                    # the step answered only its own fields per row: plain plumbing puts them onto the earlier rows by row
-                    # number, so a model step can never damage a field it was not asked for
+                    # joined back by row so a step cant touch fields it wasnt asked for
                     val = join_rows(ctx.get(st['merge']), [val], keep_empty=True)
-                    # a row the model marked as not an event of its own (a reminder, a door code, a second part of the
-                    # same event) is removed: the model decided it, code only carries it out
+                    # rows marked drop or not own event go, model decides, code carries out
                     kept = [r for r in val if not (isinstance(r, dict) and (str(r.get('drop')).lower() == 'true' or r.get('own_event') == 'no'))]
                     val = kept or val[:1]
                     if len(val) < len(ctx.get(st['merge']) or []) or any(isinstance(r, dict) and r.get('row') != i + 1 for i, r in enumerate(val)):
-                        # rows left after a drop are numbered 1, 2, ... again: the next step answers "row 1" for the first
-                        # row it sees, and an old number (row 2) would let that answer land nowhere (2.11.26)
+                        # renumber after drop so next step's row 1 lands
                         val = [dict(r, row=i + 1) if isinstance(r, dict) else r for i, r in enumerate(val)]
                 if st.get('check'):
                     ctx.pop('_note', None)
                     val = CODE_STEPS[st['check']](val, ctx)
                     ctx.pop('_note', None)
                 rec['fixes'] = fixes + (ctx.get('intake_fixes') or [])
-                # any model step may ask: a row's "ask" goes to the one Ask step, the same as a code step's question
+                # any model step can ask, goes to the one ask step
                 for r in (val if isinstance(val, list) else []):
                     q = str(r.get('ask') or '').strip() if isinstance(r, dict) else ''
-                    if q and '?' in q:   # only a real question: "no" or "send Dennis an invite" in an ask box is not one (4.11.26)
+                    if q and '?' in q:   # only real questions, "no" in ask box isnt one
                         if not isinstance(ctx.get('asks'), list):
                             ctx['asks'] = []
                         if q not in ctx['asks']:
                             ctx['asks'].append(q)
                 if st.get('role') == 'intake' and isinstance(val, list):
-                    # every row gets an id, later tables join back by it, never by position
+                    # row ids, later tables join by id not position
                     val = [dict(r, row=i + 1) if isinstance(r, dict) else r for i, r in enumerate(val)]
             elif st['kind'] == 'code':
                 ctx.pop('_note', None)
@@ -648,30 +625,29 @@ def run_steps(wf, text, dry=False, extra=None):
                 if ctx.get('_note'):
                     rec['how'] = ctx.pop('_note')
             elif st.get('when') and not ctx.get(st['when']):
-                # only runs when there is something for it, e.g. moving lunch
                 rec.update(ok=True, skipped=True, out='not needed this time', ms=0)
                 ctx[st['out']] = None
                 yield rec
                 continue
             elif st.get('unless') and ctx.get(st['unless']):
-                # e.g. create only when nothing is asked
+                # eg create only when nothing asked
                 rec.update(ok=True, skipped=True, out='not now: ' + st['unless'], ms=0)
                 ctx[st['out']] = None
                 yield rec
                 continue
             elif st['kind'] == 'tool':
-                # a dry run never touches the connection: write tools only record what they would send
+                # dry run never touches connection
                 c = {} if dry and st.get('role') == 'act' else connections.load(st['connection'])
                 perm = c.get('tools', {}).get(st['tool'], {}).get('permission', 'off')
                 kind = c.get('tools', {}).get(st['tool'], {}).get('kind', 'write')
                 if st.get('per'):
-                    # one call per distinct value in the rows, e.g. read each date the events fall on
+                    # one call per distinct value, eg each date
                     vals = sorted({r.get(st['per']) for r in (ctx.get(st['in']) or []) if r.get(st['per'])})
                     items = [{st['per']: v} for v in vals]
                 elif st.get('each'):
                     items = ctx.get(st['in']) or []
                     if st.get('prepare'):
-                        # part of the action, not a step: e.g. the thesis test's TEST title and write guard
+                        # part of the action not a step, eg test title and write guard
                         items = CODE_STEPS[st['prepare']](items, ctx)
                 else:
                     items = [ctx.get(st['in']) if st.get('in') else st.get('args', {})]
@@ -687,7 +663,7 @@ def run_steps(wf, text, dry=False, extra=None):
                     else:
                         val = res if st.get('each') else res[0]
             elif st['kind'] == 'human' and ctx.get('test_today'):
-                # a thesis test run cannot wait for answers: the questions are the result and nothing is created
+                # test run cant wait, questions are the result
                 val = list(ctx.get(st.get('in')) or [])
                 rec['ask'] = [{'type': 'add', 'text': q} for q in val]
             else:
@@ -702,16 +678,14 @@ def run_steps(wf, text, dry=False, extra=None):
             yield rec
         except Exception as e:
             rec.update(ok=False, out=str(e), ms=int((time.time() - t0) * 1000))
-            if hasattr(e, 'questions'):   # a step that needs you: the flow waits for your answers
+            if hasattr(e, 'questions'):   # flow waits for answers
                 rec['ask'] = e.questions
             yield rec
             return
 
 
 def join_rows(rows, tables, keep_empty=False):
-    """The rows with each extra table's fields added by row id (a model step's table, e.g. picks or notes).
-    keep_empty: a step that answers its own fields (merge) means it when it says "" or [] ("no company", "nobody
-    invited"), so that answer replaces the old value; only an empty ask never wipes an earlier question (2.11.26)."""
+    """adds extra tables by row id, keep_empty: merge "" wipes old value, never ask"""
     if not tables or not isinstance(rows, list):
         return rows
     out = [dict(r) for r in rows]
@@ -724,7 +698,7 @@ def join_rows(rows, tables, keep_empty=False):
 
 
 def needed(st, ctx):
-    """A step's "when": a variable that must be there, or "any:field", run only if some row has that field filled."""
+    """when = var must exist, or any:field = some row has it"""
     w = st['when']
     if w.startswith('any:'):
         v = ctx.get(st.get('in'))
@@ -734,8 +708,7 @@ def needed(st, ctx):
 
 
 def check_needs(st, val, ctx):
-    """Every output field of a step is required or optional ("needs" in the flow). A required field that came out
-    empty becomes a question for the person, unless a step already asked about it. Optional ones may stay empty."""
+    """empty required field becomes a question unless already asked"""
     needs = st.get('needs') or {}
     rows = val if isinstance(val, list) else (val.get('events') if isinstance(val, dict) else None)
     missing = []
@@ -766,8 +739,7 @@ MODIFIER = re.compile(r'^\s*(and\s+|but\s+)?(please\s+)?(book (it |them )?anyway
 
 
 def split_request(text):
-    """One request can hold several jobs. The small model lists them in the user's own words,
-    one job comes back as the original text so nothing gets reworded."""
+    """split into jobs in own words, single job keeps original text"""
     try:
         out, tok, ms = ask_small(
             'Split this request into the separate jobs the user wants done. A job is one complete thing '
@@ -782,8 +754,7 @@ def split_request(text):
             "Request: %s\n\n"
             'Answer as JSON {"jobs": ["...", "..."]}' % text)
         jobs = [j.strip() for j in (out.get('jobs') or []) if isinstance(j, str) and j.strip()]
-        # a "job" that is only a detail (book anyway, a priority, a reason) belongs to the job before it,
-        # checked in code because the small model keeps splitting these off
+        # detail jobs merge into job before, small model keeps splitting them off
         merged = []
         for j in jobs:
             if merged and MODIFIER.match(j):
@@ -796,9 +767,9 @@ def split_request(text):
 
 
 def handle_stream(text, brain='auto', dry=False):
-    """Split, route and run one request, yielding events the interface animates as they happen."""
+    """split, route, run, yields events for the ui"""
     req = time.strftime('%Y%m%d%H%M%S')
-    wfs = [w for w in load_workflows() if not w.get('draft')]   # a draft never runs until approved
+    wfs = [w for w in load_workflows() if not w.get('draft')]   # drafts never run until approved
     ids = {w['id']: w for w in wfs}
     if brain == 'claude':
         parts, split = [text], None
@@ -811,7 +782,7 @@ def handle_stream(text, brain='auto', dry=False):
         if split and len(parts) > 1:
             rec['split'] = split
         picked = None
-        # code first: a flow whose patterns match, and only that one, is picked without a model
+        # code first: exactly one pattern match picks flow, no model
         hits = [w for w in wfs if any(re.search(pt, part, re.I) for pt in w.get('patterns', []))]
         if brain != 'claude' and len(hits) == 1:
             picked = hits[0]
@@ -821,7 +792,7 @@ def handle_stream(text, brain='auto', dry=False):
                 model = brain if brain not in ('auto', 'claude') else SMALL
                 out, tok, ms = ask_small(route_prompt(part, wfs), model)
                 rec['router'] = {'model': model, 'answer': out.get('workflow'), 'tokens': tok, 'ms': ms}
-                if out.get('workflow') in ids:   # the simple rule: a real id or nothing
+                if out.get('workflow') in ids:   # real id or nothing
                     picked = ids[out['workflow']]
             except Exception as e:
                 rec['router'] = {'error': 'local model not reachable: %s' % e}
@@ -838,7 +809,7 @@ def handle_stream(text, brain='auto', dry=False):
             if trace and trace[-1].get('ask'):
                 rec['ask'] = trace[-1]['ask']
         elif brain in ('auto', 'claude') and dry:
-            # a test run never wakes Claude: it can act on its own and it costs money
+            # test run never wakes claude, it acts alone and costs money
             yield {'ev': 'route', 'i': i, 'route': 'claude'}
             ans, ms = {'ok': True, 'answer': 'Test run: this would go to Claude.'}, 0
             rec.update(route='claude', result=ans, ms=0, ok=True)
@@ -856,7 +827,7 @@ def handle_stream(text, brain='auto', dry=False):
 
 
 def answer(items):
-    """Your answers to a flow's questions, each saved in the table that question belongs to."""
+    """save each answer in its question's table"""
     load_code_steps()
     import steps.calendar as cal
     for a in items or []:
@@ -886,7 +857,7 @@ def recent_runs(n=60):
     return out[:n]
 
 
-# ---------- organising: names, folders, naming rules ----------
+# ---------- organising ----------
 
 def meta_path():
     return os.path.join(DATA_DIR, 'papertrail.json')
@@ -911,7 +882,7 @@ def save_meta(m):
 
 
 def update_flow(fid, name=None, folder=None, delete=False):
-    """Rename a flow or move it into a folder. The id and file name stay, so old runs still match."""
+    """rename or move, id and file name stay so old runs match"""
     for n in os.listdir(wf_dir()):
         if not n.endswith('.json'):
             continue
@@ -921,7 +892,7 @@ def update_flow(fid, name=None, folder=None, delete=False):
         if w.get('id') != fid:
             continue
         if delete:
-            # never really gone: the flow file moves to the Archive folder next to My Data
+            # never really gone, moves to archive next to my data
             arch = os.path.join(os.path.dirname(DATA_DIR), 'Archive')
             os.makedirs(arch, exist_ok=True)
             os.replace(p, os.path.join(arch, n.replace('.json', ' (deleted %s).json' % time.strftime('%d.%m.%y'))))

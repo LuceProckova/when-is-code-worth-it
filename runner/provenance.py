@@ -1,7 +1,4 @@
-"""Shared helpers for the thesis runner, the calibration and the release: paths, hashes and versions.
-
-Nothing here writes outside the folder it is given, and nothing here calls a calendar.
-"""
+"""shared paths, hashes and versions, no calendar calls"""
 import glob
 import hashlib
 import json
@@ -13,14 +10,14 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 THESIS = os.path.dirname(HERE)
-LIVE_APP = r'C:\Users\lucyp\Desktop\All-My-Stuff\0-AI-Solutions\08-Master-Interface\02 - App'
-REQUESTS = os.path.join(THESIS, '10-Test-Data', 'requests.csv')
+LIVE_APP = os.path.join(THESIS, 'app')
+REQUESTS = os.path.join(THESIS, 'test-data', 'requests.csv')
 OLLAMA = 'http://127.0.0.1:11434'
 MODEL = 'qwen2.5:7b'
 
 
 def data_dir(app):
-    return os.path.join(os.path.dirname(app), '03 - My Data')
+    return os.path.join(os.path.dirname(app), 'data')
 
 
 def sha256(path):
@@ -40,7 +37,7 @@ def flow_path(data, fid):
 
 
 def flow_tables(data, fid):
-    """Every csv in each knowledge folder the flow's steps name in 'uses' (e.g. thesis/naming -> knowledge/thesis)."""
+    """every csv in knowledge folders the flow uses, thesis/naming -> knowledge/thesis"""
     with open(flow_path(data, fid), encoding='utf-8') as f:
         wf = json.load(f)
     folders = sorted({u.split('/')[0] for s in wf['steps'] for u in (s.get('uses') or [])})
@@ -51,7 +48,7 @@ def flow_tables(data, fid):
 
 
 def code_files(app):
-    """The code that turns a request into events: the engine, the connector layer and every steps module."""
+    """engine, connectors and every steps module"""
     files = [os.path.join(app, n) for n in ('papertrail.py', 'connections.py') if os.path.exists(os.path.join(app, n))]
     return files + sorted(glob.glob(os.path.join(app, 'steps', '*.py')))
 
@@ -63,7 +60,7 @@ def prompt_templates(data, fid):
 
 
 def file_hashes(app, flows, requests=REQUESTS, extra=()):
-    """{label: sha256}. Labels are stable relative names so two runs can be compared line by line."""
+    """{label: sha256}, stable labels so runs compare line by line"""
     data = data_dir(app)
     h = {'requests.csv': sha256(requests)}
     for fid in flows:
@@ -80,7 +77,6 @@ def file_hashes(app, flows, requests=REQUESTS, extra=()):
 
 
 def combined(hashes, prefix):
-    """One hash over the sorted per-file hashes with this prefix, e.g. all tables."""
     return sha_text('\n'.join('%s %s' % (k, v) for k, v in sorted(hashes.items()) if k.startswith(prefix)))
 
 
@@ -105,7 +101,6 @@ def ollama_info(model=MODEL):
 
 
 def smi(fields):
-    """One nvidia-smi query for GPU 0, as a dict. Empty when there is no nvidia-smi."""
     try:
         r = subprocess.run(['nvidia-smi', '--query-gpu=' + ','.join(fields), '--format=csv,noheader,nounits', '-i', '0'],
                            capture_output=True, text=True, timeout=10, creationflags=0x08000000)   # no console window
@@ -121,7 +116,7 @@ GPU_STATE = ['temperature.gpu', 'clocks.sm', 'clocks.mem', 'power.draw', 'power.
 
 def gpu_state():
     s = smi(GPU_STATE)
-    if not s:   # older/newer drivers name the throttle field differently: try without it
+    if not s:   # some drivers name throttle field differently, retry without it
         s = smi(GPU_STATE[:-1])
     return s
 

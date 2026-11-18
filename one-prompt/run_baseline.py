@@ -1,13 +1,9 @@
-"""One-prompt baseline: every test request goes to ONE model call with the same today line and tables.
+"""one-prompt baseline, one model call per request
 
   python run_baseline.py --backend ollama --model qwen2.5:7b --ids 1,7                  (condition oneprompt7b, laptop)
   python run_baseline.py --backend ollama --model qwen2.5:72b-instruct-q4_K_M --reps 30 (oneprompt72b, run ON the GPU box)
   python run_baseline.py --backend claude --model claude-sonnet-5-5 [--batch]            (claude, key from ANTHROPIC_API_KEY)
   python run_baseline.py --dry-prompt --ids 1                                            (print one filled prompt, no call)
-
-Writes 11-Runs/<condition>-<date>.jsonl with the same keys as run_tests.py, so one analysis script reads both.
-Claude goes through the Messages API directly (never the claude CLI, which would load her CLAUDE.md and memory).
-No calendar access anywhere in this script: the result is only logged.
 """
 import argparse
 import csv
@@ -25,24 +21,22 @@ import warnings
 
 warnings.filterwarnings('ignore')
 HERE = os.path.dirname(os.path.abspath(__file__))
-REQUESTS = os.path.join(os.path.dirname(HERE), '10-Test-Data', 'requests.csv')
+REQUESTS = os.path.join(os.path.dirname(HERE), 'test-data', 'requests.csv')
 PROMPT = os.path.join(HERE, 'baseline_prompt.txt')
-TABLES = r'C:\Users\lucyp\Desktop\All-My-Stuff\0-AI-Solutions\08-Master-Interface\03 - My Data\knowledge\thesis'
+TABLES = os.path.join(os.path.dirname(HERE), 'data', 'knowledge', 'thesis')
 TIMEZONE = 'Europe/Bratislava'
-# same as papertrail.ask_model (temperature 0, seed 1, JSON mode); num_ctx raised so the tables fit
+# same as papertrail.ask_model, num_ctx raised so tables fit
 OLLAMA_OPTS = {'temperature': 0, 'seed': 1, 'num_ctx': 8192, 'num_predict': 1024}
 MAX_TOKENS = 1024
 ANTHROPIC = 'https://api.anthropic.com/v1'
 
 
 def today_line(today):
-    """The one line every condition gets: 'Today is Saturday 7 November 2026, 10:00, Europe/Bratislava'."""
     d = datetime.datetime.strptime(today, '%Y-%m-%d %H:%M')
     return 'Today is %s %d %s, %s, %s.' % (d.strftime('%A'), d.day, d.strftime('%B %Y'), d.strftime('%H:%M'), TIMEZONE)
 
 
 def tables_text(folder):
-    """Every thesis table pasted as CSV under its file name, in a fixed order."""
     parts = []
     for p in sorted(glob.glob(os.path.join(folder, '*.csv'))):
         with open(p, encoding='utf-8-sig') as f:
@@ -55,7 +49,7 @@ def fill(template, tables, row):
 
 
 def parse(text):
-    """The model's JSON answer, or None. Strips code fences and any text around the outer braces."""
+    """model json or none, strips fences and text around braces"""
     if not text:
         return None
     t = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip())
@@ -76,7 +70,6 @@ def parse(text):
 
 
 def gpu_energy():
-    """Zeus reading the GPU's own energy counter, in joules (same as run_tests.py). None without an NVIDIA GPU."""
     try:
         from zeus.device import get_gpus
         g = get_gpus()
@@ -103,7 +96,7 @@ def post(url, body, headers, timeout=600):
 
 def call_ollama(host, model, prompt):
     t0 = time.time()
-    schema_file = os.path.join(HERE, 'baseline_schema.json')   # the answer's fixed shape (structured outputs), if made
+    schema_file = os.path.join(HERE, 'baseline_schema.json')   # fixed answer shape if file exists
     fmt = json.load(open(schema_file, encoding='utf-8')) if os.path.exists(schema_file) else 'json'
     r = post(host.rstrip('/') + '/api/generate', {'model': model, 'prompt': prompt, 'stream': False,
                                                    'format': fmt, 'options': OLLAMA_OPTS}, {'Content-Type': 'application/json'})
@@ -116,7 +109,7 @@ def call_ollama(host, model, prompt):
 
 def claude_headers():
     key = os.environ.get('ANTHROPIC_API_KEY')
-    kf = os.path.join(os.path.expanduser('~'), '.anthropic-key.txt')   # 4.11.26: the key is saved here by hand, so it never passes through a chat
+    kf = os.path.join(os.path.expanduser('~'), '.anthropic-key.txt')   # key file so key never goes through a chat
     if not key and os.path.exists(kf):
         key = open(kf, encoding='utf-8-sig').read().strip()
     if not key:
@@ -125,7 +118,7 @@ def claude_headers():
 
 
 def claude_schema():
-    """The same answer shape the Qwen runs get (baseline_schema.json), with every object closed, as structured outputs require."""
+    """same shape as qwen runs, every object closed for structured outputs"""
     def close(x):
         if isinstance(x, dict):
             x = {k: close(v) for k, v in x.items()}
@@ -137,16 +130,15 @@ def claude_schema():
 
 
 def claude_params(model, prompt):
-    # 4.11.26: Claude answers straight away like Qwen (thinking between_tools = off), held to the same answer
-    # shape; Sonnet 5.5 refuses temperature, so sampling stays at the model default (noted in the method chapter)
+    # no thinking like qwen, sonnet 5.5 refuses temperature so default sampling
     p = {'model': model, 'max_tokens': 4096,
          'output_config': {'format': {'type': 'json_schema', 'schema': claude_schema()}},
          'messages': [{'role': 'user', 'content': prompt}]}
     if model.startswith('claude-sonnet-5-5'):
-        p['thinking'] = {'type': 'between_tools'}   # thinking off, Sonnet 5.5 only
+        p['thinking'] = {'type': 'between_tools'}   # thinking off, sonnet 5.5 only
     elif model.startswith('claude-haiku-5-5'):
-        p['thinking'] = {'type': 'disabled'}   # thinking off, allowed on Haiku 5.5 at its default effort (4.11.26)
-    else:   # Opus 5.5 cannot switch thinking off: least thinking it allows, room for it (4.11.26)
+        p['thinking'] = {'type': 'disabled'}
+    else:   # opus cant turn thinking off, lowest effort plus room
         p['output_config']['effort'] = 'low'
         p['max_tokens'] = 16000
     return p
@@ -179,7 +171,7 @@ def call_claude(model, prompt):
 
 
 def claude_batch(model, jobs):
-    """Message Batches API (half price). jobs: list of (custom_id, prompt). Returns {custom_id: message or error dict}."""
+    """batches api, half price, jobs = [(custom_id, prompt)]"""
     h = claude_headers()
     b = post(ANTHROPIC + '/messages/batches', {'requests': [{'custom_id': cid, 'params': claude_params(model, p)} for cid, p in jobs]}, h)
     print('batch', b['id'], 'submitted with', len(jobs), 'requests')
@@ -239,7 +231,7 @@ def main():
     hardware = (gpu_name() or 'unknown GPU') if a.backend == 'ollama' and local else ('Anthropic API' if a.backend == 'claude' else 'remote ' + a.host)
 
     model_info = {'prompt_file_sha256': __import__('hashlib').sha256(template.encode('utf-8')).hexdigest()}
-    if a.backend == 'ollama':   # quantization and digest on record for every version (Menzel 31.10.26)
+    if a.backend == 'ollama':   # quantisation and digest on record for every version
         try:
             tag = next((m for m in json.loads(urllib.request.urlopen(a.host.rstrip('/') + '/api/tags', timeout=10).read())['models']
                         if a.model in (m.get('name'), m.get('model'))), {})
@@ -268,7 +260,7 @@ def main():
               json.dumps(result, ensure_ascii=False)[:400])
 
     if a.backend == 'claude' and a.batch:
-        done_b = set()   # --resume: repeats already in --out are not sent again (4.11.26)
+        done_b = set()   # resume skips repeats already in out
         if a.resume and os.path.exists(out):
             for line in open(out, encoding='utf-8'):
                 dd = json.loads(line) if line.strip() else {}
@@ -297,11 +289,11 @@ def main():
             except (ValueError, KeyError):
                 pass
     if a.backend == 'ollama':
-        # warm-up: the first call loads the model into the GPU, it is not part of any run
+        # warmup loads model into gpu, not logged
         call_ollama(a.host, a.model, fill(template, tables, rows[0]))
     for rep in range(1, a.reps + 1):
         order = rows[:]
-        random.Random(a.seed * 1000 + rep * 10).shuffle(order)   # same shuffle as run_tests.py (ci 0): GPU warm-up and heat do not always hit the same requests (4.11.26)
+        random.Random(a.seed * 1000 + rep * 10).shuffle(order)   # same shuffle as run_tests ci 0, warmup and heat dont always hit same requests
         for r in order:
             if (r['id'], rep) in done_pairs:
                 continue

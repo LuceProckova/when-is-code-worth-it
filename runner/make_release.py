@@ -1,10 +1,6 @@
-"""Freezes the exact files of a measured run into Release\\v1.0 with a hash manifest and the environment.
+"""freezes measured run files into Release\\v1.0 with hash manifest
 
   python make_release.py [--target <folder>] [--app ...] [--flow thesis-create-events]
-
-Copies the runner, the test requests, the flow json, its knowledge tables and the app code, then writes
-MANIFEST.sha256 (sha256 two-space relative path, one per file) and ENVIRONMENT.txt (versions from provenance.py).
-Refuses to write into a target that already has files.
 """
 import argparse
 import glob
@@ -21,7 +17,7 @@ RUNNER = ['run_tests.py', 'provenance.py', 'calibrate_energy.py', 'make_release.
 
 
 def listed(app, flows):
-    """[(source, relative path in the release)]"""
+    """[(source, path in release)]"""
     data = pv.data_dir(app)
     out = [(os.path.join(HERE, n), 'runner/' + n) for n in RUNNER if os.path.exists(os.path.join(HERE, n))]
     out.append((pv.REQUESTS, 'test-data/requests.csv'))

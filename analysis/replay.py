@@ -1,10 +1,6 @@
-"""Replay: rerun only the code steps of the code flow on the model answers saved in an earlier log (1.11.26).
+"""rerun only code steps on model answers saved in old log, no gpu
 
   python replay.py dev-rounds/r5-1614-partial.jsonl [--out replay.jsonl] [--ids 4,81]
-
-The model steps (intake, calendar and people, notes) are not called again: their saved outputs are fed into the
-current code steps. So a code fix can be checked in seconds, without the GPU. Model slips stay the same as in the
-saved run, which is the point: only what the code does changes. Not a thesis result, a development tool.
 """
 import argparse
 import json
@@ -45,9 +41,9 @@ def main():
                     val = old.get('out') if old.get('ok') and not old.get('skipped') else (None if st.get('may_be_empty') or old.get('skipped') else [])
                     if isinstance(val, str):
                         val = None
-                    for r in (val if isinstance(val, list) else []):   # model questions go to the Ask step, as in a real run
+                    for r in (val if isinstance(val, list) else []):   # model questions go to ask step like real run
                         q = str(r.get('ask') or '').strip() if isinstance(r, dict) else ''
-                        if q and '?' in q and q not in ctx['asks']:   # same as papertrail.run_steps (4.11.26)
+                        if q and '?' in q and q not in ctx['asks']:   # same as papertrail.run_steps
                             ctx['asks'].append(q)
                     ctx[st['out']] = val
                     steps.append({'id': st['id'], 'kind': 'model', 'ok': True, 'out': val, 'replayed': True})
