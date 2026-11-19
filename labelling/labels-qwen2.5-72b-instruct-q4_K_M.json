@@ -1,0 +1,266 @@
+[
+ {
+  "rep": 1,
+  "workflow": "calendar",
+  "model": "qwen2.5:72b-instruct-q4_K_M",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 499,
+   "seconds": 103.7
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to extract structured information."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has one right answer by a fixed rule or lookup, converting day and time words to a date."
+   },
+   {
+    "id": "C3",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to interpret repeat words and convert them to a repeat rule."
+   },
+   {
+    "id": "C4",
+    "label": "model",
+    "criterion": "M3",
+    "why": "The step depends on what the content is about, using keywords and a people table to choose the right calendar and contacts."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to decide what from the request is worth keeping in the event notes."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has one right answer by a fixed rule, following the person's naming habits and short names from tables."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step checks the calendar, people, place, and time for conflicts, which must be exact."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step needs the person because the request is unclear or contradicts itself, and any guess could be wrong."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step is a matter of calling the calendar connector with the finished event, which decides nothing a person needs to see."
+   }
+  ]
+ },
+ {
+  "rep": 1,
+  "workflow": "email",
+  "model": "qwen2.5:72b-instruct-q4_K_M",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 496,
+   "seconds": 26.3
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to understand what the email asks for."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step looks up the sender, thread, and earlier emails, which can be done with fixed rules and lookups."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step checks the calendar for free times, which can be done with a fixed rule or lookup."
+   },
+   {
+    "id": "E4",
+    "label": "model",
+    "criterion": "M4",
+    "why": "The step decides on a response, which can depend on the content and context of the email, requiring natural language understanding."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "The step writes the text of the reply, which requires generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C2",
+    "why": "The step fills in precise data like dates, links, addresses, and names, which must be exact."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step checks that every date and name in the draft matches the email and stored data, which is a final check before saving."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step saves the draft, which is a routine action that the program can handle without decision-making."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "The step sends the reply, which cannot be undone and should be approved by the person."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "calendar",
+  "model": "qwen2.5:72b-instruct-q4_K_M",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 499,
+   "seconds": 25.4
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to extract structured information."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has one right answer by a fixed rule or lookup, converting day and time words to a date."
+   },
+   {
+    "id": "C3",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to interpret repeat words and convert them to a repeat rule."
+   },
+   {
+    "id": "C4",
+    "label": "model",
+    "criterion": "M3",
+    "why": "The step depends on what the content is about, using keywords and a people table to choose the right calendar and contacts."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to decide what from the request is worth keeping in the event notes."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has one right answer by a fixed rule, following the person's naming habits and short names from tables."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step checks the calendar, people, place, and time for conflicts, which must be exact."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step needs the person because the request is unclear or contradicts itself, and any guess could be wrong."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step is a matter of calling the calendar connector with the finished event, which decides nothing a person needs to see."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "email",
+  "model": "qwen2.5:72b-instruct-q4_K_M",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 496,
+   "seconds": 25.1
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step reads free language with open phrasing to understand what the email asks for."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step looks up the sender, thread, and earlier emails, which can be done with fixed rules and lookups."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step checks the calendar for free times, which can be done with a fixed rule or lookup."
+   },
+   {
+    "id": "E4",
+    "label": "model",
+    "criterion": "M4",
+    "why": "The step decides on a response, which can depend on the content and context of the email, requiring natural language understanding."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "The step writes the text of the reply, which requires generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C2",
+    "why": "The step fills in precise data like dates, links, addresses, and names, which must be exact."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step checks that every date and name in the draft matches the email and stored data, which is a final check before saving."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step saves the draft, which is a routine action that the program can handle without decision-making."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "The step sends the reply, which cannot be undone and should be approved by the person."
+   }
+  ]
+ }
+]

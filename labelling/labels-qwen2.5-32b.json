@@ -1,0 +1,266 @@
+[
+ {
+  "rep": 1,
+  "workflow": "calendar",
+  "model": "qwen2.5:32b",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 514,
+   "seconds": 17.3
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step involves reading free language with open phrasing to extract structured information."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, using a table to determine the duration of each type of appointment."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, turning repeat words into a repeat rule in the iCalendar format."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "The step usually follows fixed rules based on keywords and a people table, but may require a model to handle cases not covered by the rules."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step involves reading free language with open phrasing to determine what information is worth keeping in the event notes."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, using stored naming habits and short names of companies."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step is the last check before something is saved or sent, ensuring all details are correct."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step requires the person because the request is unclear or contradicts itself, and any guess could be wrong."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step involves calling the calendar connector with values earlier steps already settled, which the plain program around the steps handles."
+   }
+  ]
+ },
+ {
+  "rep": 1,
+  "workflow": "email",
+  "model": "qwen2.5:32b",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 458,
+   "seconds": 12.0
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The incoming email can ask for anything in free language."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The sender, thread, and earlier emails can be found by a fixed rule or lookup."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C3",
+    "why": "Checking free times in the calendar works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Deciding how to answer is a matter of preference and context, which can vary widely."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M5",
+    "why": "Writing the text of the reply involves generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Filling in dates, links, addresses, and names works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "This is the last check before the draft is saved or sent, ensuring accuracy."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft is a technical step that the plain program around the steps handles."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Sending the reply cannot be undone, so it must be approved by the person."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "calendar",
+  "model": "qwen2.5:32b",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 497,
+   "seconds": 12.8
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step involves reading free language with open phrasing to extract structured information."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, using a table to determine the duration of each type of appointment."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, converting repeat words into a specific format."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "The step usually follows fixed rules based on keywords and tables, but may require a model to handle ambiguous or new phrasing."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step involves reading free language with open phrasing to determine what information is worth keeping."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a right answer by a fixed rule or lookup, using tables to build the event title."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step is the last check before something is saved or sent, ensuring all details are correct."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step requires the person because the request is unclear or contradicts itself, and any guess could be wrong."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step involves calling a connector with values earlier steps already settled, and does not require a decision."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "email",
+  "model": "qwen2.5:32b",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 458,
+   "seconds": 12.5
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The incoming email can ask for anything in free language."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The sender, thread, and earlier emails can be found by a fixed rule or lookup."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C3",
+    "why": "Checking free times in the calendar works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Deciding how to answer is a matter of preference and context, which can vary widely."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M5",
+    "why": "Writing the text of the reply involves generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Filling in dates, links, addresses, and names works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "This is the last check before the draft is saved or sent, ensuring accuracy."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft is a technical step that the plain program around the steps handles."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Sending the reply cannot be undone, so it must be approved by the person."
+   }
+  ]
+ }
+]

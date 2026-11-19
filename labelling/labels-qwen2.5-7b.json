@@ -1,0 +1,266 @@
+[
+ {
+  "rep": 1,
+  "workflow": "calendar",
+  "model": "qwen2.5:7b",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 478,
+   "seconds": 6.8
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step involves turning the request into a structured format with fixed columns, which can be done by a rule."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C2",
+    "why": "The step requires precise calculations based on fixed rules and today's date, which must be exact."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C2",
+    "why": "The step involves converting repeat patterns into a specific format, which must be exact."
+   },
+   {
+    "id": "C4",
+    "label": "code",
+    "criterion": "C5",
+    "why": "The step involves choosing calendar and contact details based on keywords and a people table, which can be done by a rule."
+   },
+   {
+    "id": "C5",
+    "label": "code",
+    "criterion": "C5",
+    "why": "The step involves deciding what to keep in the event notes, which can be done by a rule."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "The step involves following naming habits and short names, which can be done by a rule."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "The step involves checking various details before saving, which must be exact."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step involves resolving unclear or contradictory requests, which requires human judgment."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step involves saving the event to the calendar, which is a task for the program, not a step in the workflow."
+   }
+  ]
+ },
+ {
+  "rep": 1,
+  "workflow": "email",
+  "model": "qwen2.5:7b",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 459,
+   "seconds": 4.4
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The email asks for something specific, and there is a clear rule to read it."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Finding the sender and thread involves looking up known information, which has a clear rule."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Checking calendar availability is a straightforward rule-based task."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P4",
+    "why": "Deciding on the response requires understanding the context and the person's preferences, which can vary."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Writing the text of the reply involves free-form language and can vary widely in wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Filling in dates, links, addresses, and names involves precise data that can be stored in a specific format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Checking the draft for accuracy involves comparing the text with the email and stored data, which can be automated."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft is a routine task that the program handles without decision-making."
+   },
+   {
+    "id": "E9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Sending the reply is a routine task that the program handles without decision-making."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "calendar",
+  "model": "qwen2.5:7b",
+  "usage": {
+   "input_tokens": 1172,
+   "output_tokens": 442,
+   "seconds": 4.4
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The step has a fixed format that can be read by a rule."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C2",
+    "why": "The step requires exact calculations, and the result must be precise."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C3",
+    "why": "The step involves converting repeat patterns into a standard format, which can be done by a rule."
+   },
+   {
+    "id": "C4",
+    "label": "code",
+    "criterion": "C4",
+    "why": "The step involves decisions based on keywords and stored tables, which can be automated."
+   },
+   {
+    "id": "C5",
+    "label": "code",
+    "criterion": "C5",
+    "why": "The step involves selecting relevant information from free text, which can be done by a rule."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "The step involves following predefined naming conventions, which can be automated."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "The step involves final checks before saving, which can be automated."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The step involves resolving unclear or contradictory information, which requires human judgment."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "The step involves saving the event through a connector, which is a runner task."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "email",
+  "model": "qwen2.5:7b",
+  "usage": {
+   "input_tokens": 997,
+   "output_tokens": 459,
+   "seconds": 4.4
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "code",
+    "criterion": "C1",
+    "why": "The email asks for something specific, and there is a clear rule to read it."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Finding the sender and thread involves looking up known information, which has a clear rule."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Checking calendar availability is a straightforward rule-based task."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P4",
+    "why": "Deciding on the response requires understanding the context and the person's preferences, which can vary."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Writing the text of the reply involves free-form language and can vary widely in wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Filling in dates, links, addresses, and names involves precise data that can be stored in a specific format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Checking the draft for accuracy involves comparing the text with the email and stored data, which can be automated."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft is a routine task that the program handles without decision-making."
+   },
+   {
+    "id": "E9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Sending the reply is a routine task that the program handles without decision-making."
+   }
+  ]
+ }
+]

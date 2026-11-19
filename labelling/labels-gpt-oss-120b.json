@@ -1,0 +1,266 @@
+[
+ {
+  "rep": 1,
+  "workflow": "calendar",
+  "model": "gpt-oss:120b",
+  "usage": {
+   "input_tokens": 1228,
+   "output_tokens": 1393,
+   "seconds": 61.4
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "The step must understand free‑form spoken or typed language and extract many varied pieces of information."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Date and time are computed from day‑time words using a fixed rule and a lookup table of appointment lengths."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Turning repeat phrases into iCalendar syntax follows a deterministic mapping."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "Most calendar/contact choices can be resolved by keyword tables (code), but occasional ambiguous event topics need a model."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Deciding which parts of the request are worth keeping requires interpreting free text for relevance."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Building the title follows stored naming‑habit rules and company short‑name lookups – a fixed transformation."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "This is the final validation before persisting the event, checking calendars, contacts, addresses and clashes."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "The request is ambiguous or contradictory, so a human must clarify before proceeding."
+   },
+   {
+    "id": "C9",
+    "label": "code",
+    "criterion": "C2",
+    "why": "Saving the event via the calendar connector is an exact, rule‑based API call."
+   }
+  ]
+ },
+ {
+  "rep": 1,
+  "workflow": "email",
+  "model": "gpt-oss:120b",
+  "usage": {
+   "input_tokens": 1058,
+   "output_tokens": 1006,
+   "seconds": 13.1
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Understanding the free‑form request in the email requires interpreting open language."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Finding sender, thread and prior messages is a deterministic lookup in the mailbox."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Checking calendar availability is a rule‑based query of stored time slots."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Choosing to accept, decline or propose another time is a matter of personal preference and cannot be fully automated."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Composing the reply text is free‑form generation with no single correct wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Inserting dates, links, addresses and names follows precise formatting rules from known data."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Verifying that every date and name matches source data is a deterministic consistency check."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft does not involve any decision; it’s just the orchestration step."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Sending the reply is irreversible and must be approved by a human."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "calendar",
+  "model": "gpt-oss:120b",
+  "usage": {
+   "input_tokens": 1228,
+   "output_tokens": 1311,
+   "seconds": 16.7
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Parsing free‑form spoken or typed language into structured columns requires understanding open phrasing, which only a language model can reliably do."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Date and time calculation from already‑extracted day‑ and time‑words follows a fixed rule and table lookup, giving a single correct answer."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Mapping repeat expressions to an iCalendar RRULE is deterministic and can be expressed as a simple rule."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "Most calendar‑choice decisions can be resolved by keyword look‑ups (code), but when the event’s subject matters the decision needs a model fallback."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Deciding which parts of a free‑text request are worth keeping (links, remarks, etc.) requires interpreting open language, a task for a model."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Building the title uses stored naming‑habit rules and company short‑name tables – precise, rule‑based data."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "This is the final validation before persisting the event; all checks are exact, rule‑based look‑ups."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "When the request is contradictory or unclear, only the user can resolve the ambiguity safely."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Calling the calendar connector to save the event is orchestration, not a decision step."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "email",
+  "model": "gpt-oss:120b",
+  "usage": {
+   "input_tokens": 1058,
+   "output_tokens": 1022,
+   "seconds": 13.0
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Understanding the free‑form request in the email requires natural‑language comprehension."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Finding sender, thread and prior messages is a deterministic lookup based on fixed metadata."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Checking calendar availability is an exact rule‑based query on a structured schedule."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Choosing to accept, decline or propose another time is a matter of personal preference and judgment."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Composing the reply text is free‑form generation with many valid wordings."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Inserting dates, links, addresses and names uses precise, structured data that can be programmatically substituted."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Verifying that every inserted datum matches source data is a rule‑based consistency check."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Saving the draft is a procedural action that does not involve any decision."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Sending the reply is irreversible and must be approved by the user."
+   }
+  ]
+ }
+]

@@ -15,7 +15,7 @@ The thesis builds a framework that decides for each step of a workflow whether a
 | `app/` | the PaperTrAIl code that carries out the workflow steps (`papertrail.py`, the steps in `steps/`) |
 | `test-data/` | the 100 test requests, the answer key and in `tables/` the rule tables of the made-up person Alex: calendars, people, places, durations, naming |
 | `analysis/` | scoring and the statistics in the thesis |
-| `labelling/` | the skill that lets a large model label every step as person, code or model |
+| `labelling/` | the skill that lets a large model label every step as person, code or model, run on Claude Opus 5.5 and on 5 open models through Ollama |
 
 ## Running it
 
@@ -28,7 +28,7 @@ python versions/one-prompt/run_baseline.py --backend ollama --model qwen2.5:7b
 python analysis/analyse.py --gold test-data/answer-key.csv --requests test-data/requests.csv versions/with-code/results/<log>.jsonl
 ```
 
-The Claude runs and the labelling need an Anthropic API key in `ANTHROPIC_API_KEY`.
+The Claude runs and the labelling need an Anthropic API key in `ANTHROPIC_API_KEY`. The open-model labelling (`label_steps_local.py`) only needs an Ollama server, local or on a rented GPU.
 
 ## Licence
 

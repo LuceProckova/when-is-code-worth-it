@@ -1,0 +1,266 @@
+[
+ {
+  "rep": 1,
+  "workflow": "calendar",
+  "model": "llama3.3:70b",
+  "usage": {
+   "input_tokens": 1173,
+   "output_tokens": 447,
+   "seconds": 31.6
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Reads free language with open phrasing to turn the request into a table row."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Works out the date and time using fixed rules and a lookup table."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Turns repeat words into a repeat rule using a fixed format."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "Usually, code can read the calendar and contacts from keywords, but sometimes a model is needed to handle unclear requests."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Picks what is worth keeping in the event notes by reading free language."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Builds the event title using stored naming habits and short names."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "Checks the calendar, people, address, and invites using stored data and fixed rules."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "Needs the person to clarify unclear or contradictory requests."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Simply puts the finished event into the calendar through the connector, deciding nothing."
+   }
+  ]
+ },
+ {
+  "rep": 1,
+  "workflow": "email",
+  "model": "llama3.3:70b",
+  "usage": {
+   "input_tokens": 999,
+   "output_tokens": 497,
+   "seconds": 25.3
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Read what the incoming email asks for, which involves understanding free language with open phrasing."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Find the sender, the thread and earlier emails with them, which can be done by applying fixed rules or lookups."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Check which times are free in the calendar, which involves applying a fixed rule or lookup to calendar data."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Decide what to answer, which is a matter of preference and there is no one right answer."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Write the text of the reply, which involves generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Fill in the dates, links, addresses and names in the draft, which works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Check that every date and name in the draft matches the email and the stored data, which checks what a model step produced against the source."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Save the draft, which is a task that decides nothing a person needs to see."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Send the reply, which cannot be undone and needs the person's approval to avoid mistakes."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "calendar",
+  "model": "llama3.3:70b",
+  "usage": {
+   "input_tokens": 1173,
+   "output_tokens": 447,
+   "seconds": 22.5
+  },
+  "steps": [
+   {
+    "id": "C1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Reads free language with open phrasing to turn the request into a table row."
+   },
+   {
+    "id": "C2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Works out the date and time using fixed rules and a lookup table."
+   },
+   {
+    "id": "C3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Turns repeat words into a repeat rule using a fixed format."
+   },
+   {
+    "id": "C4",
+    "label": "code_first_model_fallback",
+    "criterion": "S1",
+    "why": "Usually, code can read the calendar and contacts from keywords, but sometimes a model is needed to handle unclear requests."
+   },
+   {
+    "id": "C5",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Picks what is worth keeping in the event notes by reading free language."
+   },
+   {
+    "id": "C6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Builds the event title using stored naming habits and short names."
+   },
+   {
+    "id": "C7",
+    "label": "code",
+    "criterion": "C4",
+    "why": "Checks the calendar, people, address, and invites using stored data and fixed rules."
+   },
+   {
+    "id": "C8",
+    "label": "person",
+    "criterion": "P4",
+    "why": "Needs the person to clarify unclear or contradictory requests."
+   },
+   {
+    "id": "C9",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Simply puts the finished event into the calendar through the connector, deciding nothing."
+   }
+  ]
+ },
+ {
+  "rep": 2,
+  "workflow": "email",
+  "model": "llama3.3:70b",
+  "usage": {
+   "input_tokens": 999,
+   "output_tokens": 497,
+   "seconds": 25.0
+  },
+  "steps": [
+   {
+    "id": "E1",
+    "label": "model",
+    "criterion": "M1",
+    "why": "Read what the incoming email asks for, which involves understanding free language with open phrasing."
+   },
+   {
+    "id": "E2",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Find the sender, the thread and earlier emails with them, which can be done by applying fixed rules or lookups."
+   },
+   {
+    "id": "E3",
+    "label": "code",
+    "criterion": "C1",
+    "why": "Check which times are free in the calendar, which involves applying a fixed rule or lookup to calendar data."
+   },
+   {
+    "id": "E4",
+    "label": "person",
+    "criterion": "P1",
+    "why": "Decide what to answer, which is a matter of preference and there is no one right answer."
+   },
+   {
+    "id": "E5",
+    "label": "model",
+    "criterion": "M4",
+    "why": "Write the text of the reply, which involves generating free text with no single right wording."
+   },
+   {
+    "id": "E6",
+    "label": "code",
+    "criterion": "C5",
+    "why": "Fill in the dates, links, addresses and names in the draft, which works with data that can be stored in a precise format."
+   },
+   {
+    "id": "E7",
+    "label": "code",
+    "criterion": "C6",
+    "why": "Check that every date and name in the draft matches the email and the stored data, which checks what a model step produced against the source."
+   },
+   {
+    "id": "E8",
+    "label": "runner",
+    "criterion": "R",
+    "why": "Save the draft, which is a task that decides nothing a person needs to see."
+   },
+   {
+    "id": "E9",
+    "label": "person",
+    "criterion": "P2",
+    "why": "Send the reply, which cannot be undone and needs the person's approval to avoid mistakes."
+   }
+  ]
+ }
+]
