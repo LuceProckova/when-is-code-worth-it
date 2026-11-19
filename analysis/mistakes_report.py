@@ -1,6 +1,6 @@
 """every mistake of one run with the step it came from
 
-  python mistakes_report.py ../results/<log>.jsonl ../test-data/answer-key.csv mistakes.html
+  python mistakes_report.py ../versions/with-code/results/<log>.jsonl ../test-data/answer-key.csv mistakes.html
 """
 import collections
 import html

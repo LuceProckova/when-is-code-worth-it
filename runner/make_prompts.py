@@ -12,8 +12,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP_DATA = os.path.join(os.path.dirname(HERE), 'data')
-CODE_FLOW = os.path.join(APP_DATA, 'workflows', 'thesis-create-events.json')
-ALL_FLOW = os.path.join(APP_DATA, 'workflows', 'thesis-create-events-allmodel.json')
+CODE_FLOW = os.path.join(os.path.dirname(HERE), 'versions', 'with-code', 'thesis-create-events.json')
+ALL_FLOW = os.path.join(os.path.dirname(HERE), 'versions', 'all-model', 'thesis-create-events-allmodel.json')
 BASELINE = os.path.join(HERE, 'baseline_prompt.txt')
 
 ROWS = ('For each row give back only its row number and the fields this step adds, nothing else: the other fields are '
@@ -226,7 +226,7 @@ def baseline(code_flow):
              '4. Two people with the same name: the one whose calendar is the event\'s calendar.\n'
              '5. Date: the weekday of the date you wrote is the weekday the request says.')
     # one prompt now handwritten in one_prompt.txt, generated text above kept for reference
-    return open(os.path.join(os.path.dirname(HERE), 'one-prompt', 'baseline_prompt.txt'), encoding='utf-8').read()
+    return open(os.path.join(os.path.dirname(HERE), 'versions', 'one-prompt', 'baseline_prompt.txt'), encoding='utf-8').read()
 
 
 # ---------- version 3, cut for a small model ----------
@@ -491,7 +491,7 @@ def field_schema(f):
     if f == 'company':
         return {'type': 'string', 'enum': ['none', 'FAB', 'NW']}   # qwen won't write empty, "" turned into NW
     if f == 'calendar':
-        names = [r['calendar'] for r in csv.DictReader(open(os.path.join(os.path.dirname(os.path.dirname(CODE_FLOW)), 'knowledge', 'thesis', 'calendars.csv'), encoding='utf-8-sig'))]
+        names = [r['calendar'] for r in csv.DictReader(open(os.path.join(os.path.dirname(HERE), 'test-data', 'tables', 'calendars.csv'), encoding='utf-8-sig'))]
         return {'type': 'string', 'enum': names}
     if f == 'from':
         return TIME
@@ -597,7 +597,7 @@ def main():
         sys.exit(0 if (old_allm == allm_txt and old_base == base) else 1)
     open(ALL_FLOW, 'w', encoding='utf-8', newline='\n').write(allm_txt)
     open(BASELINE, 'w', encoding='utf-8', newline='\n').write(base)
-    json.dump(baseline_schema(), open(os.path.join(os.path.dirname(HERE), 'one-prompt', 'baseline_schema.json'), 'w', encoding='utf-8'), indent=1)
+    json.dump(baseline_schema(), open(os.path.join(os.path.dirname(HERE), 'versions', 'one-prompt', 'baseline_schema.json'), 'w', encoding='utf-8'), indent=1)
     print('all-model flow:', 'changed' if old_allm != allm_txt else 'same', '| baseline prompt:', 'changed' if old_base != base else 'same',
           '| baseline length', len(base), 'chars')
 

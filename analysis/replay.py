@@ -1,6 +1,6 @@
 """rerun only code steps on model answers saved in old log, no gpu
 
-  python replay.py dev-rounds/r5-1614-partial.jsonl [--out replay.jsonl] [--ids 4,81]
+  python replay.py ../versions/with-code/results/<log>.jsonl [--out replay.jsonl] [--ids 4,81]
 """
 import argparse
 import json
@@ -10,14 +10,15 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import analyse    # noqa: E402
-import dev_log    # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'runner'))
+from run_tests import final_result   # noqa: E402
 import provenance as pv   # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('log')
-    ap.add_argument('--out', default=os.path.join(HERE, 'live', 'replay.jsonl'))
+    ap.add_argument('--out', default=os.path.join(HERE, 'replay.jsonl'))
     ap.add_argument('--ids', default='')
     a = ap.parse_args()
     a.log, a.out = os.path.abspath(a.log), os.path.abspath(a.out)
@@ -57,7 +58,7 @@ def main():
                     steps.append({'id': 'ask', 'kind': 'human', 'ok': True, 'out': list(ctx.get('asks') or []),
                                   'ask': [{'type': 'add', 'text': q} for q in ctx.get('asks') or []]})
             rec = dict(type='request', flow='thesis-create-events', id=d['id'], rep=1, today=d['today'], request=d['request'], steps=steps)
-            rec['result'] = dev_log.result_of(dict(rec, result=None))
+            rec['result'] = final_result(steps)
             f.write(json.dumps(rec, ensure_ascii=False, default=list) + '\n')
         f.write(json.dumps({'type': 'block', 'flow': 'thesis-create-events', 'rep': 1}) + '\n')
     print('replayed', len(recs), '->', a.out)

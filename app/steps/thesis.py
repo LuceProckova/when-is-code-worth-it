@@ -17,7 +17,7 @@ import re
 from datetime import date, datetime, timedelta
 
 KNOW = None   # set by papertrail
-AREA = 'thesis'
+AREA = 'tables'
 DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september',
           'october', 'november', 'december']

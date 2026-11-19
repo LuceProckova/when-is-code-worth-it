@@ -33,7 +33,8 @@ def sha_text(s):
 
 
 def flow_path(data, fid):
-    return os.path.join(data, 'workflows', fid + '.json')
+    v = 'all-model' if fid.endswith('-allmodel') else 'with-code'
+    return os.path.join(os.path.dirname(data), 'versions', v, fid + '.json')
 
 
 def flow_tables(data, fid):
@@ -43,7 +44,7 @@ def flow_tables(data, fid):
     folders = sorted({u.split('/')[0] for s in wf['steps'] for u in (s.get('uses') or [])})
     out = []
     for fo in folders:
-        out += sorted(glob.glob(os.path.join(data, 'knowledge', fo, '*.csv')))
+        out += sorted(glob.glob(os.path.join(os.path.dirname(data), 'test-data', 'tables', '*.csv')))
     return out
 
 
@@ -66,7 +67,7 @@ def file_hashes(app, flows, requests=REQUESTS, extra=()):
     for fid in flows:
         h['flow/' + fid + '.json'] = sha256(flow_path(data, fid))
         for t in flow_tables(data, fid):
-            h['tables/' + os.path.relpath(t, os.path.join(data, 'knowledge')).replace('\\', '/')] = sha256(t)
+            h['tables/thesis/' + os.path.basename(t)] = sha256(t)
         for sid, ph in prompt_templates(data, fid).items():
             h['prompt/%s/%s' % (fid, sid)] = ph
     for c in code_files(app):

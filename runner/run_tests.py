@@ -123,7 +123,7 @@ def settings_value(app, flow, key):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--app', default=pv.LIVE_APP)
-    ap.add_argument('--model', default=pv.MODEL, help='Ollama model for every model step, e.g. qwen2.5:72b-instruct-q4_K_M (4.11.26)')
+    ap.add_argument('--model', default=pv.MODEL, help='Ollama model for every model step, e.g. qwen2.5:72b-instruct-q4_K_M')
     ap.add_argument('--flow', default='thesis-create-events', help='flow id, or a comma list')
     ap.add_argument('--ids', default='')
     ap.add_argument('--reps', type=int, default=1)

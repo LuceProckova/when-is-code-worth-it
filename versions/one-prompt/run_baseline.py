@@ -21,9 +21,10 @@ import warnings
 
 warnings.filterwarnings('ignore')
 HERE = os.path.dirname(os.path.abspath(__file__))
-REQUESTS = os.path.join(os.path.dirname(HERE), 'test-data', 'requests.csv')
+ROOT = os.path.dirname(os.path.dirname(HERE))
+REQUESTS = os.path.join(ROOT, 'test-data', 'requests.csv')
 PROMPT = os.path.join(HERE, 'baseline_prompt.txt')
-TABLES = os.path.join(os.path.dirname(HERE), 'data', 'knowledge', 'thesis')
+TABLES = os.path.join(ROOT, 'test-data', 'tables')
 TIMEZONE = 'Europe/Bratislava'
 # same as papertrail.ask_model, num_ctx raised so tables fit
 OLLAMA_OPTS = {'temperature': 0, 'seed': 1, 'num_ctx': 8192, 'num_predict': 1024}
@@ -225,7 +226,7 @@ def main():
         return
 
     cond = condition_name(a)
-    out = a.out or os.path.join(HERE, '%s-%s.jsonl' % (cond, time.strftime('%Y-%m-%d')))
+    out = a.out or os.path.join(HERE, 'results', '%s-%s.jsonl' % (cond, time.strftime('%Y-%m-%d')))
     local = any(h in a.host for h in ('127.0.0.1', 'localhost'))
     energy = gpu_energy() if a.backend == 'ollama' and local else None
     hardware = (gpu_name() or 'unknown GPU') if a.backend == 'ollama' and local else ('Anthropic API' if a.backend == 'claude' else 'remote ' + a.host)

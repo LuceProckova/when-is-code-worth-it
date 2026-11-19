@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import provenance as pv   # noqa: E402
 
-RUNNER = ['run_tests.py', 'provenance.py', 'calibrate_energy.py', 'make_release.py', 'README-runner.md', 'calibration.json']
+RUNNER = ['run_tests.py', 'provenance.py', 'make_release.py']
 
 
 def listed(app, flows):
@@ -22,9 +22,10 @@ def listed(app, flows):
     out = [(os.path.join(HERE, n), 'runner/' + n) for n in RUNNER if os.path.exists(os.path.join(HERE, n))]
     out.append((pv.REQUESTS, 'test-data/requests.csv'))
     for fid in flows:
-        out.append((pv.flow_path(data, fid), 'data/workflows/%s.json' % fid))
+        p = pv.flow_path(data, fid)
+        out.append((p, 'versions/%s/%s.json' % (os.path.basename(os.path.dirname(p)), fid)))
         for t in pv.flow_tables(data, fid):
-            out.append((t, 'data/knowledge/' + os.path.relpath(t, os.path.join(data, 'knowledge')).replace('\\', '/')))
+            out.append((t, 'test-data/tables/' + os.path.basename(t)))
     for c in pv.code_files(app):
         out.append((c, 'app/' + os.path.relpath(c, app).replace('\\', '/')))
     seen, uniq = set(), []

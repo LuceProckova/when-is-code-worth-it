@@ -24,7 +24,7 @@ def norm_text(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-PLACES_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "knowledge", "thesis", "places.csv")
+PLACES_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test-data", "tables", "places.csv")
 PLACE_ADDRESS = None
 
 

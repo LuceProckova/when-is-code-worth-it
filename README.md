@@ -8,15 +8,13 @@ The thesis builds a framework that decides for each step of a workflow whether a
 
 | Folder | What it holds |
 | --- | --- |
-| `app/` | the PaperTrAIl code that runs the workflows (`papertrail.py`, the steps in `steps/`) |
-| `data/workflows/` | the 2 workflow versions, with code (`thesis-create-events.json`) and all model (`thesis-create-events-allmodel.json`) |
-| `data/knowledge/thesis/` | the rule tables of the made-up person Alex: calendars, people, places, durations, naming |
-| `one-prompt/` | the one prompt version, for Qwen and the hosted Claude models |
-| `runner/` | runs the test requests, measures energy with Zeus and saves a hash of every file it used |
-| `test-data/` | the 100 test requests and the answer key |
-| `results/` | the logs of every measured run |
+| `versions/one-prompt/` | the whole request in 1 prompt, for Qwen and the hosted Claude models, with its results |
+| `versions/all-model/` | the workflow where a model does every step, with its results |
+| `versions/with-code/` | the workflow where code takes the steps with one right answer, with its results |
+| `runner/` | runs the 2 workflows, measures energy with Zeus and saves a hash of every file it used |
+| `app/` | the PaperTrAIl code that carries out the workflow steps (`papertrail.py`, the steps in `steps/`) |
+| `test-data/` | the 100 test requests, the answer key and in `tables/` the rule tables of the made-up person Alex: calendars, people, places, durations, naming |
 | `analysis/` | scoring and the statistics in the thesis |
-| `dev-log/` | what changed in every development round |
 | `labelling/` | the skill that lets a large model label every step as person, code or model |
 
 ## Running it
@@ -26,12 +24,12 @@ You need Python 3.14 with numpy, scipy and python-dateutil, [Ollama](https://oll
 ```
 python runner/run_tests.py --flow thesis-create-events --reps 3
 python runner/run_tests.py --flow thesis-create-events-allmodel --reps 3
-python one-prompt/run_baseline.py --backend ollama --model qwen2.5:7b
-python analysis/analyse.py --gold test-data/answer-key.csv --requests test-data/requests.csv results/<log>.jsonl
+python versions/one-prompt/run_baseline.py --backend ollama --model qwen2.5:7b
+python analysis/analyse.py --gold test-data/answer-key.csv --requests test-data/requests.csv versions/with-code/results/<log>.jsonl
 ```
 
 The Claude runs and the labelling need an Anthropic API key in `ANTHROPIC_API_KEY`.
 
 ## Licence
 
-The test data is shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). All names, companies and addresses in it are made up.
+The test data is shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). All names, companies and addresses in it are made up. The code is © 2026 Lucia Pročková, all rights reserved.

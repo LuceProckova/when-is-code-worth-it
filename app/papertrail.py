@@ -147,22 +147,20 @@ def ask_claude(text):
 # ---------- workflows ----------
 
 def wf_dir():
-    return os.path.join(DATA_DIR, 'workflows')
+    return os.path.join(os.path.dirname(DATA_DIR), 'versions')
 
 
 def load_workflows():
     out = []
-    try:
-        names = sorted(os.listdir(wf_dir()))
-    except OSError:
-        return out
-    for n in names:
-        if n.endswith('.json'):
-            try:
-                with open(os.path.join(wf_dir(), n), encoding='utf-8') as f:
-                    out.append(json.load(f))
-            except Exception:
-                pass
+    for v in ('with-code', 'all-model'):   # one folder per version
+        d = os.path.join(wf_dir(), v)
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if n.endswith('.json'):
+                try:
+                    with open(os.path.join(d, n), encoding='utf-8') as f:
+                        out.append(json.load(f))
+                except Exception:
+                    pass
     return out
 
 
@@ -323,9 +321,7 @@ def load_code_steps():
 # ---------- knowledge ----------
 
 def know_dir():
-    d = os.path.join(DATA_DIR, 'knowledge')
-    os.makedirs(d, exist_ok=True)
-    return d
+    return os.path.join(os.path.dirname(DATA_DIR), 'test-data')
 
 
 KNOW_TYPES = ('.csv', '.md', '.json', '.txt')
@@ -334,11 +330,10 @@ KNOW_TYPES = ('.csv', '.md', '.json', '.txt')
 def list_knowledge():
     """id = area/name without extension"""
     out = []
-    for dirpath, _, files in os.walk(know_dir()):
-        for n in sorted(files):
-            if n.endswith(KNOW_TYPES):
-                rel = os.path.relpath(os.path.join(dirpath, n), know_dir()).replace('\\', '/')
-                out.append({'id': rel.rsplit('.', 1)[0], 'file': rel, 'size': os.path.getsize(os.path.join(dirpath, n))})
+    d = os.path.join(know_dir(), 'tables')   # flows call them thesis/<name>
+    for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+        if n.endswith(KNOW_TYPES):
+            out.append({'id': 'thesis/' + n.rsplit('.', 1)[0], 'file': 'tables/' + n, 'size': os.path.getsize(os.path.join(d, n))})
     return out
 
 
